@@ -32,7 +32,7 @@ def allowed(path):
     if parts[0] == "deployment":
         return path.name in {"base-image-lock.json","actions-lock.json"}
     if parts[0] == "LICENSES":
-        return path.name == "Apache-2.0.txt"
+        return path.name in {"Apache-2.0.txt","lm-format-enforcer-MIT.txt"}
     if parts[0] == "examples":
         return path.name == "runtime_policy.disabled.json"
     if parts[0] == "docs":

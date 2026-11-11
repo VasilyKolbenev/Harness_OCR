@@ -54,6 +54,8 @@ Official package metadata/license references:
   https://pypi.org/project/onnxruntime/
   https://pypi.org/project/opencv-python-headless/
   https://pypi.org/project/pyclipper/
+  https://pypi.org/project/lm-format-enforcer/0.11.3/
+  https://github.com/noamgat/lm-format-enforcer/blob/main/LICENSE
   https://pypi.org/project/mcp/
   https://github.com/pytorch/pytorch/blob/main/LICENSE
   https://github.com/pytorch/vision/blob/main/LICENSE
@@ -63,4 +65,10 @@ describes one resolved install, not a complete reproducible wheels/hash lock or
 an exhaustive redistributable notice bundle. Audit actual transitive components
 and include their license texts before publishing a built image externally.
 Полный текст Apache License 2.0 включён в LICENSES/Apache-2.0.txt.
+
+LM Format Enforcer 0.11.3 (Noam Gat) is used through its public core API for
+token-level JSON constraints. MIT license: LICENSES/lm-format-enforcer-MIT.txt,
+copied byte-for-byte from the verified PyPI distribution's LICENSE. Tokenizer
+preprocessing in inference/constraints.py follows the official Transformers
+integration's encode/decode technique while avoiding version-specific imports.
 

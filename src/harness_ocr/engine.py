@@ -32,7 +32,7 @@ class Engine:
         self.code_sha256=digest({p.relative_to(package_root).as_posix():file_sha(p)
             for p in sorted(package_root.rglob('*.py'))})
         self.dependency_versions={}
-        for name in ('torch','transformers','tokenizers','onnxruntime','numpy','Pillow','pypdfium2','defusedxml'):
+        for name in ('torch','transformers','tokenizers','onnxruntime','numpy','Pillow','pypdfium2','defusedxml','lm-format-enforcer'):
             try:self.dependency_versions[name]=metadata.version(name)
             except metadata.PackageNotFoundError:self.dependency_versions[name]=None
     def active_cards(self,contract):
@@ -53,7 +53,8 @@ class Engine:
             'fixture_permitted':self.settings.allow_fixture,
             'python':platform.python_version(),'machine':platform.machine(),'dependencies':self.dependency_versions,
             'limits':limits,'mode':mode,'allow_reread':allow_reread,'max_reread_rounds':2,
-            'sampler':{'do_sample':False,'use_cache':True,'thinking':False,'logits_to_keep':1},
+            'sampler':{'do_sample':False,'use_cache':True,'thinking':False,'logits_to_keep':1,
+                       'output_format':'server-generated-json-schema','constraint_engine':'lm-format-enforcer'},
             'attention':'eager','cpu_threads':{'ctc_intraop':self.settings.cpu_threads,'ctc_interop':1,
                 'hf_intraop':self.settings.cpu_threads,'hf_interop':1,
                 'environment':{k:os.getenv(k) for k in ('OMP_NUM_THREADS','MKL_NUM_THREADS','OPENBLAS_NUM_THREADS')}},
