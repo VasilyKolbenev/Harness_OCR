@@ -8,6 +8,7 @@ from fastapi import FastAPI,Depends,Header,HTTPException,Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel,ConfigDict,Field,StrictBool
 from .settings import Settings
+from . import __version__
 from .service import Service
 from .core import RevisionConflict
 
@@ -53,7 +54,7 @@ def create_app(service=None,api_token=None,review_token=None):
         service.start()
         try:yield
         finally:service.close()
-    app=FastAPI(title='Harness OCR',version='0.1.0rc1',lifespan=lifespan)
+    app=FastAPI(title='Harness OCR',version=__version__,lifespan=lifespan)
     @app.exception_handler(KeyError)
     async def missing(request,exc):return JSONResponse({'detail':'not_found'},status_code=404)
     @app.exception_handler(ValueError)
