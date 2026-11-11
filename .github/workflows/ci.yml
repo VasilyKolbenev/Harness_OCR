@@ -36,7 +36,7 @@ jobs:
       - name: Check source handoff
         run: python scripts/build_release.py --output /tmp/harness-ocr-source.zip
   cuda-image-build:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.docker_build)
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.docker_build)
     needs: software-contracts
     runs-on: ubuntu-24.04
     timeout-minutes: 45
