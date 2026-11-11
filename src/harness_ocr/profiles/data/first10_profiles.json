@@ -1,0 +1,1354 @@
+{
+  "schema_version": "mosru-ocr-profile-design/1.0",
+  "status": "executable_configuration_not_quality_qualified",
+  "date": "2026-11-10",
+  "semantics": {
+    "required_fields": "Обязательный технический контракт извлечения для complete-профиля. Это не юридический перечень обязательных документов или реквизитов заявления.",
+    "conditional_fields": "Включаются только при выполнении явно заданного условия версии/услуги/наличия поля. Условие должно быть реализовано проверяемым правилом до релиза. not_observed не означает, что условие не сработало; неизвестная применимость даёт review.",
+    "requested_subset": "Услуга через MCP запрашивает минимальный допустимый набор. Статус complete относится к зафиксированному subset_contract_id; полное покрытие профиля считается отдельно.",
+    "missing": "Отсутствие распознанной строки не равно отсутствию поля на изображении. not_observed, unreadable, ambiguous, not_applicable различны.",
+    "validation": "Буквально прочитанное некорректное значение сохраняется с validation=fail и не проходит автозаполнение; счёт прочитанных invalid отдельно от принятых.",
+    "critical": "Ошибка влияет на идентификацию, роль, сумму/срок или сопоставление; учитывается в критическом событии ошибки на уровне документа.",
+    "normalization": "Ни одно допустимое преобразование не меняет raw. Список конкретных transform IDs — отдельный будущий версионированный норматив движка; общие пожелания здесь не являются разрешением на исправление."
+  },
+  "output_contract": {
+    "document": [
+      "artifact_id",
+      "source_sha256",
+      "profile_id",
+      "profile_version",
+      "subset_contract_id",
+      "model_bundle_version",
+      "policy_version",
+      "document_status"
+    ],
+    "field": [
+      "field_key",
+      "raw_value",
+      "canonical_value",
+      "transform_ids",
+      "party_role",
+      "extraction_status",
+      "validation_status",
+      "validation_reasons",
+      "decision",
+      "evidence[]"
+    ],
+    "evidence_common": [
+      "evidence_kind",
+      "source_sha256",
+      "raw_fragment_or_value",
+      "role_evidence_ids",
+      "adapter_version"
+    ],
+    "evidence_variants": {
+      "image_region": [
+        "page_id",
+        "region_id",
+        "span_id",
+        "bbox_or_quad",
+        "raster_transform_proof"
+      ],
+      "native_pdf_text": [
+        "page_id",
+        "text_object_or_span_id",
+        "bbox",
+        "text_layer_checks"
+      ],
+      "structured_xml": [
+        "namespace_map",
+        "xpath_or_stable_element_id",
+        "schema_version",
+        "original_value",
+        "structural_validation_status"
+      ],
+      "trusted_record": [
+        "authorized_source_id",
+        "record_or_request_id",
+        "retrieval_time",
+        "field_path",
+        "response_sha256"
+      ]
+    },
+    "evidence_rule": "Проверять происхождение согласно evidence_kind; у XML/реестровой записи не выдумывать координаты страницы. Структурная проверка отдельно от подписи, актуальности и полномочий.",
+    "extraction_status": [
+      "observed",
+      "ambiguous",
+      "unreadable",
+      "not_observed",
+      "not_applicable"
+    ],
+    "validation_status": [
+      "pass",
+      "fail",
+      "not_checked"
+    ],
+    "decision": [
+      "accept_for_autofill",
+      "review",
+      "reject_input"
+    ],
+    "service_decision": "OCR не возвращает approved_service, paid_verified, authentic или rights_granted. Такие решения принадлежат отдельной логике услуги и доверенным проверкам."
+  },
+  "profiles": [
+    {
+      "document_id": "D01",
+      "profile_id": "rf_passport_main_v1",
+      "name": "Паспорт гражданина РФ",
+      "subprofiles": [
+        "Основной разворот: поддерживаемые бумажные версии",
+        "Страница регистрации — отдельное расширение, не входит автоматически в основной разворот"
+      ],
+      "fields": [
+        {
+          "key": "holder.full_name",
+          "label": "ФИО владельца",
+          "value_type": "person_name",
+          "role": "holder",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Фамилия и имя обязательны; отчество — только если указано. Не подставлять отчество и не заменять ё/е.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "holder.birth_date",
+          "label": "Дата рождения",
+          "value_type": "date",
+          "role": "holder",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "passport.series",
+          "label": "Серия паспорта",
+          "value_type": "digits_4",
+          "role": "document",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "passport.number",
+          "label": "Номер паспорта",
+          "value_type": "digits_6",
+          "role": "document",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "passport.issue_date",
+          "label": "Дата выдачи",
+          "value_type": "date",
+          "role": "issuer",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "passport.issuer",
+          "label": "Кем выдан",
+          "value_type": "multispan_text",
+          "role": "issuer",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "passport.subdivision_code",
+          "label": "Код подразделения",
+          "value_type": "subdivision_code",
+          "role": "issuer",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Формат поддерживаемой версии, обычно 3–3 цифры; не получать из названия органа.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "holder.birth_place",
+          "label": "Место рождения",
+          "value_type": "multispan_text",
+          "role": "holder",
+          "requirement": "conditional",
+          "condition": "Напечатано и запрошено услугой.",
+          "critical": false,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "holder.registration_address",
+          "label": "Адрес регистрации",
+          "value_type": "address",
+          "role": "holder",
+          "requirement": "conditional",
+          "condition": "Запрошена и предоставлена соответствующая страница; не выводить адрес из иных документов.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        }
+      ],
+      "stop_rules": [
+        "Не виден номер/дата/часть ФИО — не принимать основной профиль целиком.",
+        "MRZ/штрихкод — независимый источник сверки, не разрешение генерировать невидимый текст.",
+        "Смена ФИО и действительность паспорта проверяются отдельным сервисом."
+      ],
+      "engineering_focus": "Мелкие цифры, защитный фон, многострочный орган выдачи; различать владельца и орган выдачи.",
+      "profile_version": "1.0.0",
+      "qualification_status": "not_qualified",
+      "supported_input_versions": []
+    },
+    {
+      "document_id": "D02",
+      "profile_id": "birth_certificate_ru_v1",
+      "name": "Свидетельство о рождении",
+      "subprofiles": [
+        "Поддерживаемые российские печатные бланки",
+        "Иностранный документ и перевод — отдельные будущие профили"
+      ],
+      "fields": [
+        {
+          "key": "child.full_name",
+          "label": "ФИО ребёнка",
+          "value_type": "person_name",
+          "role": "child",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "child.birth_date",
+          "label": "Дата рождения ребёнка",
+          "value_type": "date",
+          "role": "child",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "certificate.series",
+          "label": "Серия свидетельства",
+          "value_type": "certificate_series",
+          "role": "document",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Алфавит и римские/кириллические компоненты по версии бланка. Общая транслитерация запрещена.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "certificate.number",
+          "label": "Номер свидетельства",
+          "value_type": "identifier",
+          "role": "document",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "record.number",
+          "label": "Номер актовой записи",
+          "value_type": "identifier",
+          "role": "registry_record",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Не путать с номером бланка; не восстанавливать по длине и дате.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "record.date",
+          "label": "Дата актовой записи",
+          "value_type": "date",
+          "role": "registry_record",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "certificate.issuer",
+          "label": "Орган выдачи / регистрации",
+          "value_type": "multispan_text",
+          "role": "issuer",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "certificate.issue_date",
+          "label": "Дата выдачи",
+          "value_type": "date",
+          "role": "issuer",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "child.birth_place",
+          "label": "Место рождения",
+          "value_type": "multispan_text",
+          "role": "child",
+          "requirement": "conditional",
+          "condition": "Напечатано и включено в контракт услуги.",
+          "critical": false,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "mother.full_name",
+          "label": "ФИО матери",
+          "value_type": "person_name",
+          "role": "mother",
+          "requirement": "conditional",
+          "condition": "Поле заполнено и необходимо для подтверждения связи; законное отсутствие не заменять догадкой.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "father.full_name",
+          "label": "ФИО отца",
+          "value_type": "person_name",
+          "role": "father",
+          "requirement": "conditional",
+          "condition": "Поле заполнено и необходимо для задачи; не выводить отцовство по фамилии.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        }
+      ],
+      "stop_rules": [
+        "Перепутаны ребёнок и родитель либо запись и бланк — блокировать автозаполнение.",
+        "Отсутствие OCR-строки не доказывает пустое поле на изображении.",
+        "Структурированные сведения ЗАГС предпочтительнее повторного чтения скана."
+      ],
+      "engineering_focus": "Роли родственников, разные номера, смешение похожих латинских и кириллических символов.",
+      "profile_version": "1.0.0",
+      "qualification_status": "not_qualified",
+      "supported_input_versions": []
+    },
+    {
+      "document_id": "D03",
+      "profile_id": "snils_evidence_v1",
+      "name": "СНИЛС: свидетельство / уведомление",
+      "subprofiles": [
+        "Существующая карточка — legacy-представление",
+        "Бумажное/электронное уведомление АДИ-РЕГ; нативный текст предпочтителен"
+      ],
+      "fields": [
+        {
+          "key": "holder.full_name",
+          "label": "ФИО владельца",
+          "value_type": "person_name",
+          "role": "holder",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "holder.snils",
+          "label": "СНИЛС",
+          "value_type": "snils",
+          "role": "holder",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "11 цифр, формат и проверенный алгоритм контрольного числа с предусмотренными исключениями. Не подбирать цифры под checksum.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "holder.birth_date",
+          "label": "Дата рождения",
+          "value_type": "date",
+          "role": "holder",
+          "requirement": "conditional",
+          "condition": "Поле напечатано в поддерживаемой версии и запрошено.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        }
+      ],
+      "stop_rules": [
+        "Совпадение checksum не подтверждает правильность прочтения.",
+        "Не требовать изображение карточки, если номер уже получен доверенным структурированным каналом."
+      ],
+      "engineering_focus": "Длинный идентификатор, версии представления, сверка принадлежности владельцу.",
+      "profile_version": "1.0.0",
+      "qualification_status": "not_qualified",
+      "supported_input_versions": []
+    },
+    {
+      "document_id": "D04",
+      "profile_id": "power_of_attorney_evidence_v1",
+      "name": "Доверенность представителя",
+      "subprofiles": [
+        "Печатная доверенность физлица",
+        "Доверенность организации",
+        "МЧД XML — отдельный нативный адаптер, без OCR"
+      ],
+      "fields": [
+        {
+          "key": "principal.identity",
+          "label": "Доверитель: ФИО / организация",
+          "value_type": "party",
+          "role": "principal",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "representative.identity",
+          "label": "Представитель: ФИО / организация",
+          "value_type": "party",
+          "role": "representative",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "power.issue_date",
+          "label": "Дата совершения / выдачи",
+          "value_type": "date",
+          "role": "document",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "power.authority_literal",
+          "label": "Буквальный фрагмент полномочий",
+          "value_type": "multispan_text",
+          "role": "authority",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Только связанные исходные фрагменты, включая ограничения и отрицания; юридическое разрешение на действие определяется отдельно.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "power.number",
+          "label": "Номер доверенности",
+          "value_type": "identifier",
+          "role": "document",
+          "requirement": "conditional",
+          "condition": "Присутствует в документе.",
+          "critical": false,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "power.valid_until",
+          "label": "Срок / дата окончания",
+          "value_type": "date_or_literal",
+          "role": "document",
+          "requirement": "conditional",
+          "condition": "Явно указан; не вычислять срок по умолчанию в OCR-слое.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "notary.full_name",
+          "label": "Нотариус",
+          "value_type": "person_name",
+          "role": "notary",
+          "requirement": "conditional",
+          "condition": "Нотариальный подвид.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "notary.register_number",
+          "label": "Номер в реестре нотариуса",
+          "value_type": "identifier",
+          "role": "notary",
+          "requirement": "conditional",
+          "condition": "Нотариальный подвид и номер напечатан.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "principal.identifier",
+          "label": "ИНН / реквизиты документа доверителя",
+          "value_type": "typed_identifier",
+          "role": "principal",
+          "requirement": "conditional",
+          "condition": "Напечатано и необходимо для идентификации стороны.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "representative.identifier",
+          "label": "Реквизиты документа представителя",
+          "value_type": "typed_identifier",
+          "role": "representative",
+          "requirement": "conditional",
+          "condition": "Напечатано и необходимо для идентификации стороны.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        }
+      ],
+      "stop_rules": [
+        "Неполный фрагмент полномочий или отрицания — review.",
+        "Результат OCR не подтверждает действительность, подпись, отсутствие отмены и достаточность полномочий.",
+        "В первом пилоте семантическое решение о полномочиях подтверждает оператор / отдельная политика услуги."
+      ],
+      "engineering_focus": "Несколько сторон, длинные полномочия, отрицания, условия и нативная МЧД.",
+      "profile_version": "1.0.0",
+      "qualification_status": "not_qualified",
+      "supported_input_versions": []
+    },
+    {
+      "document_id": "D05",
+      "profile_id": "paper_machine_passport_v1",
+      "name": "Бумажный паспорт самоходной машины",
+      "subprofiles": [
+        "Поддерживаемые бумажные версии ПСМ",
+        "Выписка ЭПСМ — другой тип D26"
+      ],
+      "fields": [
+        {
+          "key": "psm.series",
+          "label": "Серия ПСМ",
+          "value_type": "identifier",
+          "role": "document",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "psm.number",
+          "label": "Номер ПСМ",
+          "value_type": "identifier",
+          "role": "document",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "machine.name_make_model",
+          "label": "Наименование / марка / модель",
+          "value_type": "multispan_text",
+          "role": "machine",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "machine.manufacture_year",
+          "label": "Год изготовления",
+          "value_type": "year",
+          "role": "machine",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "machine.main_identifier",
+          "label": "Заводской / идентификационный номер",
+          "value_type": "typed_identifier",
+          "role": "machine",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Различать VIN/PIN и заводской номер по подписи и версии. Не навязывать каждому ПСМ 17-символьный VIN.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "machine.engine_number",
+          "label": "Номер двигателя",
+          "value_type": "identifier",
+          "role": "engine",
+          "requirement": "conditional",
+          "condition": "Поле заполнено; обозначения отсутствия сохранять буквально.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "machine.chassis_number",
+          "label": "Номер шасси / рамы",
+          "value_type": "identifier",
+          "role": "chassis",
+          "requirement": "conditional",
+          "condition": "Поле есть в версии и заполнено.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "psm.issue_date",
+          "label": "Дата выдачи ПСМ",
+          "value_type": "date",
+          "role": "issuer",
+          "requirement": "conditional",
+          "condition": "Включена в поддерживаемый объём страниц и напечатана.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "psm.issuer",
+          "label": "Организация выдачи",
+          "value_type": "multispan_text",
+          "role": "issuer",
+          "requirement": "conditional",
+          "condition": "Напечатана и запрошена.",
+          "critical": false,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "ownership.entries",
+          "label": "Записи о владельцах с датами",
+          "value_type": "record_list",
+          "role": "ownership_history",
+          "requirement": "conditional",
+          "condition": "Предоставлены соответствующие страницы. Не объявлять последнюю видимую запись текущим владельцем автоматически.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        }
+      ],
+      "stop_rules": [
+        "Номер двигателя не заменяет основной идентификатор машины.",
+        "Частичный комплект страниц не подтверждает актуального владельца.",
+        "При наличии электронного паспорта сначала использовать доступный структурированный источник."
+      ],
+      "engineering_focus": "Таблицы, похожие идентификаторы, история владельцев и мелкие реквизиты.",
+      "profile_version": "1.0.0",
+      "qualification_status": "not_qualified",
+      "supported_input_versions": []
+    },
+    {
+      "document_id": "D06",
+      "profile_id": "machine_registration_certificate_v1",
+      "name": "Свидетельство регистрации самоходной машины",
+      "subprofiles": [
+        "Поддерживаемые печатные версии, необходимые стороны документа"
+      ],
+      "fields": [
+        {
+          "key": "registration.series",
+          "label": "Серия свидетельства",
+          "value_type": "identifier",
+          "role": "document",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "registration.number",
+          "label": "Номер свидетельства",
+          "value_type": "identifier",
+          "role": "document",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "machine.registration_mark",
+          "label": "Государственный регистрационный знак",
+          "value_type": "registration_mark",
+          "role": "machine",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "machine.make_model",
+          "label": "Марка / модель",
+          "value_type": "multispan_text",
+          "role": "machine",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "machine.main_identifier",
+          "label": "Идентификационный / заводской номер",
+          "value_type": "typed_identifier",
+          "role": "machine",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "owner.identity",
+          "label": "Владелец: ФИО / организация",
+          "value_type": "party",
+          "role": "owner",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "registration.issue_date",
+          "label": "Дата выдачи",
+          "value_type": "date",
+          "role": "issuer",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "machine.engine_number",
+          "label": "Номер двигателя",
+          "value_type": "identifier",
+          "role": "engine",
+          "requirement": "conditional",
+          "condition": "Напечатан в поддерживаемой версии.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "machine.chassis_number",
+          "label": "Номер шасси / рамы",
+          "value_type": "identifier",
+          "role": "chassis",
+          "requirement": "conditional",
+          "condition": "Напечатан в поддерживаемой версии.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "owner.address",
+          "label": "Адрес владельца",
+          "value_type": "address",
+          "role": "owner",
+          "requirement": "conditional",
+          "condition": "Напечатан и нужен услуге.",
+          "critical": false,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        }
+      ],
+      "stop_rules": [
+        "Не смешивать со СТС автомобиля D29.",
+        "Недостающая сторона документа — partial, если на ней необходимое поле.",
+        "Сведения о регистрации при доступности проверять по уполномоченному источнику."
+      ],
+      "engineering_focus": "Двусторонность, мелкий текст, владелец против органа регистрации.",
+      "profile_version": "1.0.0",
+      "qualification_status": "not_qualified",
+      "supported_input_versions": []
+    },
+    {
+      "document_id": "D07",
+      "profile_id": "payment_notice_v1",
+      "name": "Платёжное извещение / начисление",
+      "subprofiles": [
+        "Заполненное начисление",
+        "Пустой бланк реквизитов — извлечение возможное, но начисление не complete"
+      ],
+      "fields": [
+        {
+          "key": "payee.name",
+          "label": "Получатель",
+          "value_type": "multispan_text",
+          "role": "payee",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payee.inn",
+          "label": "ИНН получателя",
+          "value_type": "inn",
+          "role": "payee",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payee.accounts",
+          "label": "Счета с явными ролями",
+          "value_type": "typed_bank_account_list",
+          "role": "payee",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Все необходимые напечатанные счета: расчётный, казначейский, банковский счёт ЕКС, корреспондентский — отдельные элементы с account_role и evidence. Обязательные роли задаёт подтип. Не определять вид счёта только по длине.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payee.bank_bik",
+          "label": "БИК банка получателя",
+          "value_type": "digits_9",
+          "role": "payee_bank",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.purpose",
+          "label": "Назначение платежа",
+          "value_type": "multispan_text",
+          "role": "payment",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.amount_due",
+          "label": "Сумма к оплате",
+          "value_type": "money_decimal",
+          "role": "payment",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Прочитать десятичный разделитель; не вставлять копейки и не вычислять сумму из действующего тарифа.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payer.name",
+          "label": "Плательщик",
+          "value_type": "party",
+          "role": "payer",
+          "requirement": "conditional",
+          "condition": "Поле заполнено; пустой бланк не привязывать к гражданину.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payer.inn",
+          "label": "ИНН плательщика",
+          "value_type": "inn",
+          "role": "payer",
+          "requirement": "conditional",
+          "condition": "Напечатан и нужен задаче.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.uin",
+          "label": "УИН",
+          "value_type": "uin",
+          "role": "payment",
+          "requirement": "conditional",
+          "condition": "Присутствует в выбранном подтипе; нулевое обозначение и реальный идентификатор не смешивать.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.kbk",
+          "label": "КБК",
+          "value_type": "kbk",
+          "role": "payment",
+          "requirement": "conditional",
+          "condition": "Бюджетный платёж и КБК напечатан.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.oktmo",
+          "label": "ОКТМО",
+          "value_type": "oktmo",
+          "role": "payment",
+          "requirement": "conditional",
+          "condition": "Напечатан в подтипе бюджетного платежа.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payee.kpp",
+          "label": "КПП получателя",
+          "value_type": "digits_9",
+          "role": "payee",
+          "requirement": "conditional",
+          "condition": "Есть у получателя и напечатан.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payee.bank_name",
+          "label": "Банк получателя",
+          "value_type": "multispan_text",
+          "role": "payee_bank",
+          "requirement": "conditional",
+          "condition": "Напечатан и включён в контракт услуги.",
+          "critical": false,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        }
+      ],
+      "stop_rules": [
+        "Извещение никогда не получает статус «оплачено» из наличия реквизитов.",
+        "Архивный официальный образец применяется как макет, не источник актуальных сумм и банковских реквизитов.",
+        "КБК, счёт и назначение не брать из соседней колонки."
+      ],
+      "engineering_focus": "Ячейки, роли плательщик/получатель, несколько счетов, многострочное назначение.",
+      "profile_version": "1.0.0",
+      "qualification_status": "not_qualified",
+      "supported_input_versions": []
+    },
+    {
+      "document_id": "D08",
+      "profile_id": "bank_payment_proof_v1",
+      "name": "Банковское подтверждение оплаты",
+      "subprofiles": [
+        "Банковский чек / квитанция",
+        "Исполненное платёжное поручение",
+        "Каждый поддерживаемый банк / макет — отдельная версия"
+      ],
+      "fields": [
+        {
+          "key": "payment.operation_date",
+          "label": "Дата операции",
+          "value_type": "date",
+          "role": "payment",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.amount_paid",
+          "label": "Сумма платежа без комиссии",
+          "value_type": "money_decimal",
+          "role": "payment",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сумма самой операции; комиссия и общее списание имеют отдельные роли. Не вычитать комиссию из общего списания для восстановления отсутствующей суммы.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.currency",
+          "label": "Валюта",
+          "value_type": "currency_literal",
+          "role": "payment",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.execution_status",
+          "label": "Признак исполнения / статус",
+          "value_type": "status_literal",
+          "role": "payment",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Буквальная формулировка либо предусмотренная макетом отметка исполнения той же операции; отсутствие не означает успех. В многозаписном документе статус не переносится на соседний платёж.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.payee_or_reference",
+          "label": "Получатель или однозначная ссылка платежа",
+          "value_type": "party_or_payment_reference",
+          "role": "payment",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Условия достаточности определяет банковский подтип. Без получателя/ссылки платежу нельзя сопоставить услугу.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.transaction_id",
+          "label": "Идентификатор / номер операции",
+          "value_type": "identifier",
+          "role": "payment",
+          "requirement": "conditional",
+          "condition": "Напечатан в подтипе.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.uin",
+          "label": "УИН",
+          "value_type": "uin",
+          "role": "payment",
+          "requirement": "conditional",
+          "condition": "Напечатан и относится к операции, а не примеру/инструкции.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payer.name",
+          "label": "Плательщик",
+          "value_type": "party",
+          "role": "payer",
+          "requirement": "conditional",
+          "condition": "Напечатан и нужен для сопоставления.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payee.name",
+          "label": "Получатель",
+          "value_type": "multispan_text",
+          "role": "payee",
+          "requirement": "conditional",
+          "condition": "Напечатан в документе.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "payment.purpose",
+          "label": "Назначение",
+          "value_type": "multispan_text",
+          "role": "payment",
+          "requirement": "conditional",
+          "condition": "Напечатано в документе.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "bank.name",
+          "label": "Банк",
+          "value_type": "multispan_text",
+          "role": "bank",
+          "requirement": "conditional",
+          "condition": "Есть в подтипе.",
+          "critical": false,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        }
+      ],
+      "stop_rules": [
+        "Запланирован, принят, отменён и исполнен — разные состояния.",
+        "OCR не подтверждает подлинность банковского документа и поступление денег в бюджет.",
+        "Сопоставление с начислением и ГИС ГМП — отдельный доверенный вызов."
+      ],
+      "engineering_focus": "Статус операции, десятичные разделители, разные банковские макеты; комиссия отдельно от суммы платежа.",
+      "profile_version": "1.0.0",
+      "qualification_status": "not_qualified",
+      "supported_input_versions": []
+    },
+    {
+      "document_id": "D09",
+      "profile_id": "education_agreement_v1",
+      "name": "Договор дополнительных образовательных услуг",
+      "subprofiles": [
+        "Платный договор",
+        "Бюджетный / частично финансируемый договор",
+        "Системный структурированный договор — нативное чтение"
+      ],
+      "fields": [
+        {
+          "key": "provider.name",
+          "label": "Исполнитель / учреждение",
+          "value_type": "multispan_text",
+          "role": "provider",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "customer.identity",
+          "label": "Заказчик / законный представитель",
+          "value_type": "party",
+          "role": "customer",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "learner.full_name",
+          "label": "Обучающийся",
+          "value_type": "person_name",
+          "role": "learner",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "contract.date",
+          "label": "Дата договора",
+          "value_type": "date",
+          "role": "document",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "contract.program",
+          "label": "Программа обучения",
+          "value_type": "multispan_text",
+          "role": "education",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "contract.term",
+          "label": "Срок: даты либо буквальная продолжительность",
+          "value_type": "term_literal",
+          "role": "education",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Не вычислять отсутствующую дату окончания из длительности, не смешивать срок договора и срок обучения.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "contract.number",
+          "label": "Номер договора",
+          "value_type": "identifier",
+          "role": "document",
+          "requirement": "conditional",
+          "condition": "Есть номер; «б/н» сохранять, не создавать номер.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "learner.birth_date",
+          "label": "Дата рождения обучающегося",
+          "value_type": "date",
+          "role": "learner",
+          "requirement": "conditional",
+          "condition": "Напечатана и нужна для идентификации.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "customer.passport",
+          "label": "Паспорт заказчика",
+          "value_type": "passport_identifier",
+          "role": "customer",
+          "requirement": "conditional",
+          "condition": "Напечатан и запрошен услугой.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "provider.inn",
+          "label": "ИНН исполнителя",
+          "value_type": "inn",
+          "role": "provider",
+          "requirement": "conditional",
+          "condition": "Напечатан в реквизитах.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "contract.full_cost",
+          "label": "Полная стоимость",
+          "value_type": "money_decimal",
+          "role": "full_cost",
+          "requirement": "conditional",
+          "condition": "Поле есть в платном / финансируемом подтипе.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "contract.customer_cost",
+          "label": "Стоимость для заказчика",
+          "value_type": "money_decimal",
+          "role": "customer_cost",
+          "requirement": "conditional",
+          "condition": "Поле предусмотрено подтипом. Не приравнивать к полной стоимости по умолчанию.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "contract.monthly_payment",
+          "label": "Ежемесячный платёж",
+          "value_type": "money_decimal",
+          "role": "monthly_payment",
+          "requirement": "conditional",
+          "condition": "Напечатан; не вычислять делением полной стоимости.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "provider.license_literal",
+          "label": "Реквизиты лицензии",
+          "value_type": "identifier",
+          "role": "provider_license",
+          "requirement": "conditional",
+          "condition": "Напечатаны и нужны задаче; наличие строки не подтверждает лицензию.",
+          "critical": false,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        }
+      ],
+      "stop_rules": [
+        "Страницы разных договоров не объединять по совпадающей фамилии.",
+        "Родитель, ребёнок и представитель учреждения имеют разные роли.",
+        "Для сформированного городом договора сначала использовать структурированные данные системы."
+      ],
+      "engineering_focus": "Несколько страниц, программа и названия из нескольких строк, разные смыслы денежных полей.",
+      "profile_version": "1.0.0",
+      "qualification_status": "not_qualified",
+      "supported_input_versions": []
+    },
+    {
+      "document_id": "D10",
+      "profile_id": "oms_evidence_v1",
+      "name": "Полис ОМС / выписка о полисе",
+      "subprofiles": [
+        "Поддерживаемый бумажный полис",
+        "Пластиковое представление с нужными сторонами",
+        "Цифровая выписка: нативные данные предпочтительны"
+      ],
+      "fields": [
+        {
+          "key": "insured.full_name",
+          "label": "ФИО застрахованного",
+          "value_type": "person_name",
+          "role": "insured",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "policy.number",
+          "label": "Номер полиса / ЕНП",
+          "value_type": "versioned_policy_identifier",
+          "role": "insured",
+          "requirement": "required_for_profile_completion",
+          "condition": "В поддерживаемой версии и согласованном объёме страниц поле должно быть читаемо; иначе partial/review.",
+          "critical": true,
+          "validation": "Формат зависит от версии; 16-значный ЕНП не навязывать старым полисам. Не путать с номером бланка.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "insured.birth_date",
+          "label": "Дата рождения",
+          "value_type": "date",
+          "role": "insured",
+          "requirement": "conditional",
+          "condition": "Есть в поддерживаемом представлении и требуется для сопоставления.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "insurer.name",
+          "label": "Страховая организация",
+          "value_type": "multispan_text",
+          "role": "insurer",
+          "requirement": "conditional",
+          "condition": "Напечатана и запрошена.",
+          "critical": false,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        },
+        {
+          "key": "policy.valid_until",
+          "label": "Дата окончания действия",
+          "value_type": "date_or_literal",
+          "role": "document",
+          "requirement": "conditional",
+          "condition": "Явно указана. Не добавлять срок и не объявлять действующим по отсутствию даты.",
+          "critical": true,
+          "validation": "Сопоставление с буквальным исходным фрагментом и его ролью; без восстановления отсутствующих символов.",
+          "normalization": "Хранить raw. Канонизацию разрешает только версионированное правило поля, зафиксированное до теста."
+        }
+      ],
+      "stop_rules": [
+        "Не путать застрахованного с представителем.",
+        "OCR не проверяет актуальный статус страхования.",
+        "Реестровые данные и цифровое представление предпочтительнее повторного OCR."
+      ],
+      "engineering_focus": "Версии номеров, карточки с двумя сторонами, идентификация владельца.",
+      "profile_version": "1.0.0",
+      "qualification_status": "not_qualified",
+      "supported_input_versions": []
+    }
+  ],
+  "source_design": "work/mosru-document-catalog-2026-11/first10_profiles.json"
+}

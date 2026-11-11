@@ -1,0 +1,72 @@
+{
+  "schema_version": "harness-deployment-audit/1",
+  "date": "2026-11-11",
+  "model_inference_performed": false,
+  "docker_build_verified": false,
+  "gpu_verified": false,
+  "targeted_tests": {
+    "new_deployment": 7,
+    "existing_supervisor": 5,
+    "existing_packaging": 11,
+    "all_passed": true
+  },
+  "findings": [
+    {
+      "id": "DEP01",
+      "severity": "P1",
+      "status": "fixed",
+      "problem": "API and benchmark with different data_dir could execute models on the same GPU concurrently.",
+      "change": "Shared HARNESS_LOCK_DIR admission lease; API and offline CLI use same Compose writable volume.",
+      "evidence": "tests/test_deployment_audit.py::test_different_api_and_benchmark_state_dirs_share_one_device_owner"
+    },
+    {
+      "id": "DEP02",
+      "severity": "P1",
+      "status": "fixed",
+      "problem": "Parent-only lease disappeared after scheduler hard-kill while model child could still be running.",
+      "change": "Spawned wrapper owns compute lease until its process exits; new scheduler cannot enter computation while orphan remains.",
+      "evidence": "tests/test_deployment_audit.py::test_orphan_retains_compute_lease_after_scheduler_is_killed"
+    },
+    {
+      "id": "DEP03",
+      "severity": "P1",
+      "status": "fixed",
+      "problem": "Docker could be healthy from liveness alone while models/readiness failed.",
+      "change": "Authenticated bounded readiness probe requires ready=true and fixture=false.",
+      "evidence": "tests/test_deployment_audit.py::HealthProbeTests"
+    },
+    {
+      "id": "DEP04",
+      "severity": "P2",
+      "status": "fixed",
+      "problem": "Process.start failure could leak admission lease and IPC; invalid per-call override could disable hard deadline.",
+      "change": "Bounded bootstrap, finite positive per-call validation, startup cleanup, callback-failure worker cleanup.",
+      "evidence": "tests/test_deployment_audit.py::DeploymentLeaseTests"
+    },
+    {
+      "id": "DEP05",
+      "severity": "P2",
+      "status": "fixed",
+      "problem": "Source ZIP omitted reviewed runtime config example and lacked clean-clone CI.",
+      "change": "Allowlisted examples/docs/workflows plus pinned official Actions CI for Ubuntu contracts and explicit manual Docker build/import smoke.",
+      "evidence": ".github/workflows/ci.yml, scripts/build_release.py, deployment/actions-lock.json"
+    },
+    {
+      "id": "DEP06",
+      "severity": "release_gate",
+      "status": "pending_target_execution",
+      "problem": "Docker layers/build and GPU generations have not executed in this Windows environment.",
+      "required_evidence": "Actual CI Docker build/import run plus target doctor/API/model/GPU benchmark reports for exact commit/image.",
+      "not_claimed": "No actual Docker build, GPU correctness, VRAM, latency or OCR quality pass."
+    },
+    {
+      "id": "DEP07",
+      "severity": "P2",
+      "status": "pending_linux_build_lock",
+      "problem": "Top-level versions and base image digest are pinned, but full transitive Linux wheel/hash lock is not yet frozen.",
+      "required_evidence": "Resolve/build on Linux, retain installed build.freeze and then reviewed hashes or final immutable image artifact.",
+      "not_claimed": "Metadata availability and Windows pip check do not prove Linux dependency resolution."
+    }
+  ],
+  "dependency_probe_note": "pip cross-platform metadata request found exact Linux top-level wheels, then failed on Windows-only pywin32 marker: pip --platform does not override the host marker environment; this is not evidence of a Linux package conflict."
+}

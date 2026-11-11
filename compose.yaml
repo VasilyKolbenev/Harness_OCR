@@ -1,0 +1,50 @@
+name: harness-ocr
+services:
+  ocr:
+    image: harness-ocr:0.1.0rc2
+    build:
+      context: .
+      args:
+        PYTHON_IMAGE: ${HARNESS_PYTHON_IMAGE:-python:3.12.16-slim-bookworm@sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4}
+    platform: linux/amd64
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HARNESS_PORT:-8080}:8080"
+    environment:
+      HARNESS_API_TOKEN: ${HARNESS_API_TOKEN:?Set a private API token}
+      HARNESS_REVIEW_TOKEN: ${HARNESS_REVIEW_TOKEN:?Set a separate private review token}
+      HARNESS_DATA: /var/lib/harness
+      HARNESS_MODELS: /models
+      HARNESS_LOCK_DIR: /var/lib/harness/locks
+      HARNESS_DEVICE: cuda
+      HARNESS_DTYPE: bfloat16
+      HARNESS_QWEN: ${HARNESS_QWEN:-qwen-0.8b}
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    volumes:
+      - type: bind
+        source: ${HARNESS_MODELS_HOST:-./models}
+        target: /models
+        read_only: true
+      - harness_data:/var/lib/harness
+      - harness_reports:/reports
+    read_only: true
+    tmpfs:
+      - /tmp:size=2147483648,mode=1777
+    shm_size: 2gb
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 512
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${HARNESS_GPU_ID:-0}"]
+              capabilities: [gpu]
+volumes:
+  harness_data:
+  harness_reports:

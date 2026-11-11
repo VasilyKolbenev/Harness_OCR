@@ -1,0 +1,305 @@
+from __future__ import annotations
+from pathlib import Path
+import time
+import json
+import os
+import platform
+from importlib import metadata
+from . import __version__
+from .core import DocumentStore
+from .core.trace import TraceRecorder
+from .profiles import ProfileRegistry,project_contract_result,assess_completion
+from .control.audit import AuditController,AuditLog,AuditSampler,DriftMonitor
+from .control.strategies import StrategyStore
+from .control.risk import RiskPolicyStore
+from .control.runtime import BindingPolicyGateway,unsupported_strategy_actions
+from .grounding import build_candidates,qwen_prompt,resolve_response,validate_literal,CANDIDATE_GENERATOR_VERSION as CANDIDATE_VERSION
+from .util import digest,utc,file_sha
+from .inference.supervisor import ModelCanceled,ModelDeadline
+
+class Engine:
+    def __init__(self,settings,backend):
+        settings.validate();self.settings=settings;self.backend=backend
+        self.root=settings.data_dir;self.root.mkdir(parents=True,exist_ok=True)
+        self.documents=DocumentStore(self.root/'documents.sqlite')
+        self.trace=TraceRecorder(self.root/'trace.sqlite');self.profiles=ProfileRegistry()
+        self.control_db=self.root/'control.sqlite'
+        self.strategies=StrategyStore(self.control_db);self.policies=RiskPolicyStore(self.control_db)
+        self.gateway=BindingPolicyGateway.from_file(self.root/'runtime_policy.json',self.policies)
+        self.audit_log=AuditLog(self.control_db)
+        self.audit=AuditController(AuditSampler(.05,self.audit_log.server_sampling_seed('harness-audit-v1')),self.audit_log)
+        package_root=Path(__file__).parent
+        self.code_sha256=digest({p.relative_to(package_root).as_posix():file_sha(p)
+            for p in sorted(package_root.rglob('*.py'))})
+        self.dependency_versions={}
+        for name in ('torch','transformers','tokenizers','onnxruntime','numpy','Pillow','pypdfium2','defusedxml'):
+            try:self.dependency_versions[name]=metadata.version(name)
+            except metadata.PackageNotFoundError:self.dependency_versions[name]=None
+    def active_cards(self,contract):
+        return self.strategies.retrieve(contract['profile_id'],contract['profile_version'],
+            field_keys=contract['requested_fields'],actor_scopes={'strategy:read'})
+    def compile_contract(self,profile_id,*,subset=None):
+        from .profiles.applicability import TrustedApplicabilityRegistry
+        return TrustedApplicabilityRegistry.from_file(self.root/'applicability.json').compile(
+            self.profiles,profile_id,subset=subset,input_scope_version=self.settings.input_scope_version)
+    def binding(self,contract,qwen,mode='hybrid',allow_reread=True,strategy_cards=None):
+        from .models import model_lock
+        if mode not in {'hybrid','rules'} or type(allow_reread) is not bool:raise ValueError('invalid_bound_runtime_mode')
+        cards=self.active_cards(contract) if strategy_cards is None else strategy_cards
+        limits={name:getattr(self.settings,name) for name in ('max_upload_bytes','max_pages','max_page_pixels',
+            'max_input_tokens','max_new_tokens','call_timeout_seconds','document_timeout_seconds','max_rereads')}
+        runtime={'package_version':__version__,'package_code_sha256':self.code_sha256,
+            'backend_class':type(self.backend).__module__+'.'+type(self.backend).__qualname__,
+            'fixture_permitted':self.settings.allow_fixture,
+            'python':platform.python_version(),'machine':platform.machine(),'dependencies':self.dependency_versions,
+            'limits':limits,'mode':mode,'allow_reread':allow_reread,'max_reread_rounds':2,
+            'sampler':{'do_sample':False,'use_cache':True,'thinking':False,'logits_to_keep':1},
+            'attention':'eager','cpu_threads':{'ctc_intraop':self.settings.cpu_threads,'ctc_interop':1,
+                'hf_intraop':self.settings.cpu_threads,'hf_interop':1,
+                'environment':{k:os.getenv(k) for k in ('OMP_NUM_THREADS','MKL_NUM_THREADS','OPENBLAS_NUM_THREADS')}},
+            'image_preprocess':{'max_pixels':589824,'max_side':1536,'upscale':False},
+            'ocr_prompt':'Extract the text in the image.','candidate_generator':CANDIDATE_VERSION,
+            'strategy_bundle_sha256':digest(cards)}
+        return {'profile_id':contract['profile_id'],'profile_version':contract['profile_version'],
+          'subset_contract_id':contract['subset_contract_id'],
+          'model_bundle_sha256':digest({'lock':model_lock(),'qwen':qwen,'dtype':self.settings.dtype,
+             'device':self.settings.device,'pipeline':'harness-v1','contract':contract['config_sha256'],
+             'runtime':runtime}),
+          'policy_version':self.settings.policy_version,'input_scope_version':self.settings.input_scope_version}
+    def run(self,document_id,path,source_sha,profile_id,*,subset=None,qwen=None,mode='hybrid',
+            cancel=None,shared_optics=None,allow_reread=True,emit_operational_events=True):
+        if mode not in {'hybrid','rules'}:raise ValueError('unknown_mode')
+        qwen=qwen or self.settings.qwen
+        if qwen not in {'qwen-0.8b','qwen-4b'}:raise ValueError('unknown_qwen')
+        contract=self.compile_contract(profile_id,subset=subset)
+        cards=self.active_cards(contract)
+        binding=self.binding(contract,qwen,mode,allow_reread,strategy_cards=cards)
+        start=time.perf_counter();stage='created';errors=[];calls=[]
+        snapshot=self.documents.create_document(document_id,source_sha,contract['profile_id'],
+             metadata={'binding':binding,'subset':contract['requested_fields']})
+        observations=[];regions=[];optics_completed=True;selector_complete=True;optics=None
+        strategy_reasons=[];strategy_info={'active_cards':[],'unsupported_actions':[]}
+        unresolved_rereads=[]
+        def record(name,inputs,outputs,kind='pure',status='completed'):
+            self.trace.record(name,inputs,outputs,{'pipeline_version':'1','contract':contract['config_sha256']},
+               document_id=document_id,stage_kind=kind,deterministic=kind=='pure',status=status)
+        def checkpoint():
+            if cancel and cancel():raise ModelCanceled('canceled')
+            if time.perf_counter()-start>=self.settings.document_timeout_seconds:raise ModelDeadline('document_deadline')
+        def call(op,args):
+            checkpoint();left=self.settings.document_timeout_seconds-(time.perf_counter()-start)
+            kind='external' if op=='ingest' else 'model'
+            wall_start=time.perf_counter()
+            try:out=self.backend.call(op,args,cancel=cancel,timeout=min(left,self.settings.call_timeout_seconds))
+            except Exception as e:
+                record(op,args,{'error':type(e).__name__+':'+str(e)[:250]},kind,'failed');raise
+            calls.append({'op':op,'completed':out.get('completed',True),
+                          'seconds':out.get('seconds',out.get('diagnostics',{}).get('seconds')),
+                          'wall_seconds':time.perf_counter()-wall_start,
+                          'timing_scope':'wall includes process/load/preprocess; HF seconds is generate only',
+                          'generated_tokens':out.get('generated_tokens'),'peak_cuda_allocated_bytes':out.get('peak_cuda_allocated_bytes')})
+            record(op,args,out,kind,'completed' if out.get('completed',True) else 'incomplete');return out
+        terminal='completed'
+        try:
+            checkpoint();stage='optics'
+            if shared_optics is not None:
+                if shared_optics['source_sha256']!=source_sha:raise ValueError('replay_source_mismatch')
+                observations=json.loads(json.dumps(shared_optics['observations']));regions=shared_optics['regions']
+                optics_completed=shared_optics['completed'];record('frozen_optics',{'source_sha256':source_sha},shared_optics)
+            else:
+                ingestion=call('ingest',{'path':str(path),'output':str(self.root/'rasters'/document_id)})
+                if ingestion['source_sha256']!=source_sha:raise ValueError('input_source_sha_mismatch')
+                record('ingest',{'source_sha256':source_sha},ingestion,'external')
+                observations.extend(ingestion['observations'])
+                if observations:
+                    snapshot=self.documents.revise(document_id,observations=observations,expected_revision=snapshot['revision'],reason='native_observations')
+                if ingestion.get('native_bridge')=='generic_xml_unqualified':
+                    # A generic XML parser is not a versioned service adapter.
+                    # Its text must not inherit a raster profile's calibration.
+                    strategy_reasons.append('unsupported_native_adapter:generic_xml')
+                    optics_completed=False
+                    raise ValueError('native_adapter_not_registered_for_profile')
+                for page in ingestion['pages']:
+                    checkpoint()
+                    cheap=call('cheap',{'page':page,'source_sha256':source_sha,
+                                  'output_dir':str(self.root/'regions'/document_id/page['page_id'])})
+                    observations.extend(cheap['observations']);regions.extend(cheap['regions'])
+                    snapshot=self.documents.revise(document_id,observations=cheap['observations'],expected_revision=snapshot['revision'],reason='ctc_observations')
+                    optics_completed=optics_completed and cheap.get('completed',True)
+                    read=call('ocr',{'path':page['path']})
+                    observations.append({'id':page['page_id']+'_xiaomi','source_sha256':source_sha,
+                        'text':read['text'],'evidence_kind':'image_region','page':page['page'],'page_id':page['page_id'],
+                        'source_size':page['source_size'],'bbox':[0,0,*page['source_size']],
+                        'completed':read['completed'],'capture_id':document_id+'_xiaomi_'+page['page_id'],
+                        'model_id':'xiaomi','raster_transform_proof':page['transform']})
+                    optics_completed=optics_completed and read['completed']
+                    snapshot=self.documents.revise(document_id,observations=[observations[-1]],expected_revision=snapshot['revision'],reason='xiaomi_observation')
+            optics={'source_sha256':source_sha,'observations':observations,'regions':regions,'completed':optics_completed}
+            if shared_optics is not None:
+                snapshot=self.documents.revise(document_id,observations=observations,expected_revision=snapshot['revision'],reason='frozen_optical_observations')
+            record('strategy_retrieval',{'profile_id':contract['profile_id']},cards,'external')
+            supported={'reread','require_role_label','review_on_conflict','preserve_source_punctuation'}
+            unsupported=unsupported_strategy_actions(cards,supported)
+            strategy_info={'active_cards':[{'card_id':c['card_id'],'version':c['version'],'card_sha256':c['card_sha256']} for c in cards],
+                'unsupported_actions':unsupported,'implemented_actions':sorted(supported)}
+            strategy_reasons.extend('unsupported_strategy_action:'+a for a in unsupported)
+            # Strategy memory can reduce work, never increase hard limits or fill values.
+            reread_limit=self.settings.max_rereads if allow_reread else 0
+            max_rounds=2
+            for card in cards:
+                for directive in card.get('directives',[]):
+                    if directive['action']=='reread':
+                        reread_limit=min(reread_limit,directive['parameters']['max_regions'])
+                        max_rounds=min(max_rounds,directive['parameters']['max_rounds'])
+                        if directive['parameters']['scale_policy']!='native':
+                            strategy_reasons.append('unsupported_strategy_parameter:reread:scale_policy')
+            errors.extend(strategy_reasons)
+            used=set();round_no=0
+            while True:
+                checkpoint();stage='candidates';candidates=build_candidates(observations,contract)
+                record('candidates',{'observations':observations,'contract':contract},candidates)
+                # Conflicting anchored observations must reach F01 even if the
+                # selector chooses only its preferred reading. Selection is not
+                # authority to erase an independently observed contradiction.
+                conflicts=self._candidate_conflict_claims(candidates,snapshot)
+                if conflicts:
+                    snapshot=self.documents.revise(document_id,claims=conflicts,
+                        expected_revision=snapshot['revision'],reason='conflicting_literal_observations')
+                if mode=='rules':
+                    proposals=[]
+                    for field in contract['requested_fields']:
+                        group=[c for c in candidates.values() if c['field_key']==field and c['role_verified']]
+                        values={c['raw_value'] for c in group}
+                        if len(values)==1:
+                            c=group[0];proposals.append({'field_key':field,'candidate_ids':[c['id']],'party_role':c['party_role']})
+                    response=json.dumps({'proposals':proposals,'reread_requests':[]})
+                else:
+                    stage='selector';out=call('select',{'name':qwen,'prompt':qwen_prompt(candidates,regions,contract,
+                        observations=observations,strategies=cards,remaining_budget={
+                            'reread_regions':max(0,reread_limit-len(used)),
+                            'reread_rounds':max(0,max_rounds-round_no),
+                            'max_new_tokens':self.settings.max_new_tokens})})
+                    selector_complete=out['completed']
+                    if not selector_complete:errors.append('selector_token_limit');break
+                    response=out['text']
+                resolved=resolve_response(response,candidates,regions,contract)
+                record('resolve',{'response':response,'candidates':candidates,'regions':regions,'contract':contract},resolved)
+                new=[c for c in resolved['claims'] if c['id'] not in snapshot['claims']]
+                if new:snapshot=self.documents.revise(document_id,claims=new,expected_revision=snapshot['revision'],reason='source_grounded_proposals')
+                for rejected in resolved['rejected']:errors.append(rejected['reason']+':'+rejected['field_key'])
+                pending=[]
+                for request in resolved['reread_requests']:
+                    pending.extend(x for x in request['region_ids'] if x not in used and x not in pending)
+                if resolved['reread_requests'] and (not pending or len(used)>=reread_limit or round_no>=max_rounds):
+                    reason=('reread_disabled' if not allow_reread else
+                            'reread_no_new_region' if not pending else 'reread_budget_exhausted')
+                    unresolved_rereads=[{**r,'unresolved_reason':reason} for r in resolved['reread_requests']]
+                    strategy_reasons.append('unresolved_reread_requests')
+                    break
+                if not pending:break
+                by_id={r['id']:r for r in regions};add=[]
+                for rid in pending[:reread_limit-len(used)]:
+                    region=by_id[rid];used.add(rid);stage='reread'
+                    read=call('ocr',{'path':region['path']})
+                    add.append({'id':rid+'_reread','source_sha256':source_sha,'text':read['text'],
+                         'evidence_kind':'image_region','page':region['page'],'page_id':region['page_id'],
+                         'source_size':region['source_size'],'quad':region['quad'],
+                         'completed':read['completed'],'capture_id':document_id+'_reread_'+rid,
+                         'model_id':'xiaomi','raster_transform_proof':region.get('transform',{})})
+                    optics_completed=optics_completed and read['completed']
+                snapshot=self.documents.revise(document_id,observations=add,expected_revision=snapshot['revision'],reason='bounded_reread')
+                observations.extend(add);round_no+=1
+        except ModelCanceled as e:terminal='canceled';errors.append(str(e))
+        except ModelDeadline as e:terminal='budget_exhausted';errors.append(str(e))
+        except Exception as e:terminal='failed';errors.append(type(e).__name__+':'+str(e)[:250])
+        if optics is not None:
+            optics['observations']=observations
+            optics['completed']=optics_completed
+        snapshot=self.documents.get(document_id)
+        result=self.project(snapshot,contract,binding,terminal=terminal,
+              complete=terminal=='completed' and optics_completed and selector_complete,
+              review_reasons=strategy_reasons,emit_operational_events=emit_operational_events)
+        result.update(errors=errors,stopped_at=stage,calls=calls,seconds=time.perf_counter()-start,
+                      mode=mode,qwen=qwen,finished_utc=utc(),optics=optics,strategy_runtime=strategy_info,
+                      unresolved_rereads=unresolved_rereads)
+        record('result',{'revision':snapshot['revision']}, {k:v for k,v in result.items() if k!='optics'})
+        return result
+    @staticmethod
+    def _candidate_conflict_claims(candidates,snapshot):
+        groups={}
+        for candidate in candidates.values():
+            if candidate.get('role_verified'):
+                groups.setdefault(candidate['field_key'],[]).append(candidate)
+        claims=[]
+        for field,items in groups.items():
+            if len({c['raw_value'] for c in items})<2:continue
+            for c in items:
+                ident='observed_conflict_'+digest([field,c['id']])[:24]
+                if ident in snapshot['claims']:continue
+                claims.append({'id':ident,'field_key':field,'raw_value':c['raw_value'],
+                    'evidence_ids':c['evidence_ids'],'spans':c['spans'],
+                    'role_evidence_ids':c['role_evidence_ids'],'role_spans':c['role_spans'],
+                    'party_role':c['party_role'],'origin':'rule','depends_on':[]})
+        return claims
+    def project(self,snapshot,contract,binding,*,terminal='completed',complete=True,review_reasons=(),
+                emit_operational_events=True):
+        fields={}
+        for key,spec in contract['field_definitions'].items():
+            current=snapshot['fields'].get(key,{});raw=current.get('raw_value')
+            observed=raw is not None and not current.get('needs_review')
+            inactive=key in contract.get('not_applicable_fields',[])
+            value={**current,'value':raw,'raw_value':raw,'critical':spec['critical'],
+                'party_role':current.get('party_role'),
+                'evidence_ids':current.get('evidence_ids',[]),
+                'extraction_status':'not_applicable' if inactive else ('observed' if observed else ('ambiguous' if current else 'not_observed'))}
+            value.update(validate_literal(raw,spec) if observed else {'canonical_value':None,
+                   'transform_ids':[],'validation_status':'not_checked','validation_reasons':['no_unambiguous_literal']})
+            fields[key]=value
+            if inactive and raw is not None:
+                review_reasons=[*review_reasons,'not_applicable_field_observed:'+key]
+        result={'document_id':snapshot['document_id'],'source_sha256':snapshot['source_sha256'],
+          **binding,'revision':snapshot['revision'],'fields':fields,'observations':snapshot['observations'],
+          'conflicts':snapshot['conflicts'],'required_fields':contract['required_fields'],
+          'triggered_conditional_fields':[k for k,v in contract['conditionals'].items() if v['applies'] is True],
+          'unresolved_conditions':contract['unknown_conditionals'],
+          'conditional_applicability':{k:v['applies'] for k,v in contract['conditionals'].items()},
+          'terminal_status':terminal,'completed':complete,'profile_qualified':False,
+          'risk_score':None,'score_contract_id':'unqualified-v1','service_approval':False}
+        result['completion_report']=assess_completion(contract,fields)
+        required=[*contract['required_fields'],*result['triggered_conditional_fields']]
+        result['all_required_fields_validated']=bool(required) and not contract['unknown_conditionals'] and all(
+            fields[k]['extraction_status']=='observed' and fields[k]['validation_status']=='pass'
+            and not fields[k].get('needs_review') for k in required)
+        # Qualification/configuration and ranking features come from the trusted
+        # server gateway; callers cannot enable acceptance with flags or scores.
+        result.update(self.gateway.apply(result,binding))
+        if any(f.get('origin')=='human' for f in fields.values()):
+            # Machine-qualified risk is not qualification of an operator's new
+            # literal. Preserve the correction; the separate human acceptance
+            # contract is not silently inherited from the machine policy.
+            review_reasons=[*review_reasons,'human_correction_requires_separate_acceptance']
+            result['operator_corrected']=True
+        if review_reasons:
+            result['decision']='review'
+            result['reason_codes']=sorted(set(result['reason_codes']+list(review_reasons)))
+        if emit_operational_events and result.get('profile_qualified') and result.get('policy_id'):
+            stored=self.policies.get(result['policy_id'])['policy']
+            baseline=stored['qualification']['document_coverage']
+            monitor=DriftMonitor(self.audit_log,binding,baseline_acceptance_rate=baseline)
+            drift=monitor.observe(snapshot['document_id'],binding,accepted=result['decision']=='accept_for_autofill',
+                event_id='engine_drift_'+digest([snapshot['document_id'],snapshot['revision'],binding,result['decision'],monitor.monitor_sha256]))
+            result['drift']=drift
+            if drift['quarantined']:
+                result['decision']='review'
+                result['reason_codes']=sorted(set(result['reason_codes']+['binding_quarantined']))
+        for field in fields.values():
+            field['decision']='accept_for_autofill' if (result['decision']=='accept_for_autofill'
+                and field['extraction_status']=='observed' and field['validation_status']=='pass'
+                and not field.get('needs_review')) else 'review'
+        result['needs_review']=result['decision']=='review'
+        result['audit']=self.audit.plan(snapshot['document_id'],snapshot['revision'],binding,
+                     group_id=snapshot['source_sha256'],accepted=result['decision']=='accept_for_autofill',
+                     acceptance_context=digest({'policy_id':result.get('policy_id'),'decision':result['decision']})) if emit_operational_events else {
+                         'deferred_until_publication':True,'selected':False}
+        result['contract_result']=project_contract_result(contract,result)
+        return result

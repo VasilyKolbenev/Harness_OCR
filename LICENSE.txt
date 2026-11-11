@@ -1,0 +1,11 @@
+Harness OCR: license decision pending
+
+The author/user has not selected a distribution license for the new Harness OCR
+source code. No Apache-2.0 or other open-source license is assigned to that code
+by this file. Obtain the author's licensing decision before public redistribution.
+
+Third-party models and dependencies retain their own licenses and notices. Their
+licensing does not automatically license this project's new source code. See
+THIRD_PARTY_NOTICES.txt and the pinned model manifest for component references.
+
+This file records an unresolved licensing decision; it is not a substitute license.

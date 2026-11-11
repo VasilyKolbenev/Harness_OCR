@@ -1,0 +1,26 @@
+{
+  "scope": "Arithmetic and literal-format checks only; no document authenticity or production qualification.",
+  "checked_on": "2026-11-11",
+  "sources": [
+    {
+      "id": "SNILS-CBR",
+      "url": "https://cbr.ru/StaticHtml/File/117620/method_0921.pdf",
+      "supports": "SNILS weighted checksum and historical range where checksum is not applied. The engine keeps that range not_checked until a version-specific contract exists."
+    },
+    {
+      "id": "UIN-ROSKAZNA",
+      "url": "https://roskazna.gov.ru/storage/page-files/57957/%D0%A4%D0%BE%D1%80%D0%BC%D0%B0%D1%82%D1%8B%20%20%D0%B2%D0%B7%D0%B0%D0%B8%D0%BC%D0%BE%D0%B4%D0%B5%D0%B9%D1%81%D1%82%D0%B2%D0%B8%D1%8F.pdf",
+      "supports": "Section 5.1.4: UIN decimal checksum with repeated weights 1..10 and shifted fallback weights."
+    },
+    {
+      "id": "BANK-FORMATS-CBR",
+      "url": "https://www.cbr.ru/Crosscut/LawActs/File/6091",
+      "supports": "Bank identifier and account shape, not a database lookup or account ownership verification."
+    },
+    {
+      "id": "LOCAL-PROFILES",
+      "path": "src/harness_ocr/profiles/data/first10_profiles.json",
+      "supports": "The actual technical extraction contract and field roles. It is not a legal list of documents required by a service."
+    }
+  ]
+}

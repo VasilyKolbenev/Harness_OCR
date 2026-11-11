@@ -1,0 +1,139 @@
+{
+  "schema_version": "harness-runtime-audit/1",
+  "date": "2026-11-11",
+  "scope": "Independent runtime and integration review before repository handoff",
+  "gpu_inference_performed": false,
+  "production_quality_qualified": false,
+  "findings": [
+    {
+      "id": "R01",
+      "severity": "high",
+      "problem": "Startup SHA or CUDA failure only changed HTTP readiness while the scheduler still consumed persisted queued work.",
+      "resolution": "A failed startup verification now holds the queue. Each queued model bundle is verified before an expected-ID atomic claim; changed model file metadata invalidates verification cache.",
+      "status": "fixed",
+      "files": [
+        "src/harness_ocr/service.py",
+        "src/harness_ocr/jobs.py"
+      ],
+      "tests": "tests/test_runtime_audit.py"
+    },
+    {
+      "id": "R02",
+      "severity": "high",
+      "problem": "An uncaught queue or publication error could kill the scheduler while static readiness continued admitting new jobs.",
+      "resolution": "Scheduler fatal state is observable, readiness and liveness reflect thread health, new admissions stop, remaining queued work is held and a sanitized durable diagnostic is written.",
+      "status": "fixed",
+      "files": [
+        "src/harness_ocr/service.py",
+        "src/harness_ocr/api.py"
+      ],
+      "tests": "tests/test_runtime_audit.py"
+    },
+    {
+      "id": "R03",
+      "severity": "high",
+      "problem": "The model watchdog synchronously queried SQLite for cancellation; database contention could delay a hard compute deadline by the SQL busy timeout.",
+      "resolution": "The watchdog reads a per-active-job memory event. Cancellation is durably recorded and then signals the event; registration and late-cancel races have explicit coverage.",
+      "status": "fixed",
+      "files": [
+        "src/harness_ocr/service.py",
+        "src/harness_ocr/api.py"
+      ],
+      "tests": "tests/test_runtime_audit.py"
+    },
+    {
+      "id": "R04",
+      "severity": "high",
+      "problem": "A late cancellation rewrote the top-level decision but could retain an accepted nested contract projection or operational metadata; finish also mutated the caller's input object.",
+      "resolution": "Publication deep-copies the result, preserves reason history, makes every canceled projection review-only and removes unpublished audit/drift metadata. Engine operational side effects are deferred until a terminal published result is projected.",
+      "status": "fixed",
+      "files": [
+        "src/harness_ocr/jobs.py",
+        "src/harness_ocr/service.py",
+        "src/harness_ocr/engine.py"
+      ],
+      "tests": "tests/test_runtime_audit.py"
+    },
+    {
+      "id": "R05",
+      "severity": "medium",
+      "problem": "Startup recovery or thread-start failures could retain scheduler ownership, and the same instance could be started twice.",
+      "resolution": "Failed startup releases ownership and backend resources; duplicate startup is rejected and shutdown does not release ownership while a scheduler could still publish.",
+      "status": "fixed",
+      "files": [
+        "src/harness_ocr/service.py"
+      ],
+      "tests": "tests/test_runtime_audit.py"
+    },
+    {
+      "id": "R06",
+      "severity": "medium",
+      "problem": "A non-ASCII Bearer header caused hmac.compare_digest to raise TypeError and returned an HTTP server error.",
+      "resolution": "Malformed non-ASCII authorization returns 401. Server bearer tokens must be distinct ASCII strings without whitespace and meet the minimum length.",
+      "status": "fixed",
+      "files": [
+        "src/harness_ocr/api.py"
+      ],
+      "tests": "tests/test_auth_audit.py"
+    },
+    {
+      "id": "R07",
+      "severity": "high",
+      "problem": "Unperformed reread requirements were held by Engine.run but could disappear when Service.result freshly projected the same snapshot.",
+      "resolution": "Structured unresolved_rereads remain a review barrier during subsequent result reads, even if a policy gateway would otherwise accept the fields.",
+      "status": "fixed",
+      "files": [
+        "src/harness_ocr/service.py"
+      ],
+      "tests": "tests/test_runtime_audit.py"
+    },
+    {
+      "id": "R08",
+      "severity": "high",
+      "problem": "Invalidating evidence behind a conflicted claim did not retract that claim; obsolete conflicts permanently poisoned fresh source-backed readings.",
+      "resolution": "Inactive evidence retracts conflicted automatic claims too. Once real opposition is gone, surviving historic conflicts are retired without automatic resurrection. Fresh proof/new claim is required; independent fields and protected human decisions are preserved.",
+      "status": "fixed",
+      "files": [
+        "src/harness_ocr/core/state.py"
+      ],
+      "tests": "tests/test_core_conflict_audit.py"
+    },
+    {
+      "id": "R09",
+      "severity": "high",
+      "problem": "Confirmed critical audit outcomes were logged but did not directly quarantine the active binding, leaving the audit-to-risk safety action disconnected.",
+      "resolution": "Reviewer-only HTTP outcome bridge validates document evidence; outcome, binding quarantine and quarantine event commit in one SQLite transaction. Active F08 policies immediately become review-only. Identical replay is idempotent and cannot undo authorized clearance; no gold or promotion occurs.",
+      "status": "fixed",
+      "files": [
+        "src/harness_ocr/control/audit.py",
+        "src/harness_ocr/service.py",
+        "src/harness_ocr/api.py"
+      ],
+      "tests": "tests/test_audit_quarantine_api.py"
+    }
+  ],
+  "remaining_acceptance_requirements": [
+    "Run the complete frozen integration suite after all audit branches are integrated.",
+    "Build and run the pinned Linux container on the target NVIDIA GPU.",
+    "Measure native 0.8B/4B hybrid accuracy, abstention, latency and memory on independent Russian documents.",
+    "Do not promote software tests or synthetic smoke to production quality qualification."
+  ],
+  "targeted_verification": {
+    "tests_run": 82,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "seconds": 15.705,
+    "modules": [
+      "test_audit_quarantine_api",
+      "test_controls",
+      "test_api",
+      "test_runtime_audit",
+      "test_auth_audit",
+      "test_core",
+      "test_core_conflict_audit"
+    ],
+    "execution": "Windows Python3.12 fixture-only; local ASGI TestClient outside sandbox",
+    "neural_inference_performed": false
+  }
+}

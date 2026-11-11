@@ -1,0 +1,6 @@
+{
+  "schema_version": "harness-runtime-policy/1.0",
+  "qualified_bindings": [],
+  "policy_ids": {},
+  "score_contract_id": "harness-hard-gate-rank-v1"
+}

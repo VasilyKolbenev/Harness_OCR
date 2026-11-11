@@ -1,0 +1,2 @@
+# Lightweight service development installation; GPU wheels are separate.
+.
