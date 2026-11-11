@@ -10,8 +10,9 @@ from datetime import datetime
 from .util import digest
 from .validators import pattern_spans,validate as validate_observed_literal
 from .line_graph import add_adjacent,lines as source_lines
+from .typed_fields import STRUCTURED_TYPES,build_typed_candidates,value_identity
 
-CANDIDATE_GENERATOR_VERSION='literal-label-spatial-v2'
+CANDIDATE_GENERATOR_VERSION='literal-label-spatial-typed-v3'
 VERSION=CANDIDATE_GENERATOR_VERSION
 
 ALIASES={
@@ -58,6 +59,7 @@ def build_candidates(observations,contract,max_candidates=700):
                 if not any(hit[0]<old[1] and old[0]<hit[1] for old in kept):kept.append(hit)
             kept.sort(key=lambda h:h[0])
             for field,spec in defs.items():
+                if spec['value_type'] in STRUCTURED_TYPES:continue
                 areas=[]
                 for index,(start,end,owners) in enumerate(kept):
                     if owners!={field}:continue
@@ -101,7 +103,10 @@ def build_candidates(observations,contract,max_candidates=700):
                               'label_spans':anchors,'value_start':offset+start,'value_end':offset+end}}
                     if len(candidates)>max_candidates: raise ValueError('candidate_limit_no_silent_truncation')
             offset+=len(line)
-    add_adjacent(observations,contract,labels,candidates,max_candidates)
+    scalar_contract={**contract,'field_definitions':{k:v for k,v in defs.items() if v['value_type'] not in STRUCTURED_TYPES}}
+    add_adjacent(observations,scalar_contract,labels,candidates,max_candidates)
+    candidates.update(build_typed_candidates(observations,contract,max_candidates))
+    if len(candidates)>max_candidates:raise ValueError('candidate_limit_no_silent_truncation')
     return candidates
 
 def qwen_prompt(candidates,regions,contract,*,observations=None,strategies=(),remaining_budget=None):
@@ -149,7 +154,7 @@ def resolve_response(text,candidates,regions,contract):
             raise ValueError('candidate_field_or_role_mismatch')
         if any(not x['role_verified'] for x in chosen):
             rejected.append({'field_key':field,'reason':'role_anchor_not_observed','candidate_ids':ids});continue
-        if len({x['raw_value'] for x in chosen})!=1:
+        if len({digest(value_identity(x['raw_value'])) for x in chosen})!=1:
             rejected.append({'field_key':field,'reason':'candidate_disagreement','candidate_ids':ids});continue
         # Multiple readings of the SAME literal are provenance, not concatenation
         # and not independent statistical evidence. Differing readings abstain.
@@ -168,5 +173,5 @@ def resolve_response(text,candidates,regions,contract):
         requests.append(r)
     return {'claims':claims,'rejected':rejected,'reread_requests':requests}
 
-def validate_literal(raw,spec):
-    return validate_observed_literal(raw,spec)
+def validate_literal(raw,spec,*,observations=None):
+    return validate_observed_literal(raw,spec,observations=observations)

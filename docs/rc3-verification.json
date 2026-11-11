@@ -1,0 +1,104 @@
+{
+  "schema_version": "harness-rc3-verification/1",
+  "release": "0.1.0rc3",
+  "date": "2026-11-11",
+  "source_package_python_sha256": "a8bd20a03f6d2c8711ad0bbf0b7f9a2f57e1d1532a36377e2164bd9baafe8821",
+  "local_software_tests": {
+    "tests": 319,
+    "passed": 319,
+    "seconds": 44.918,
+    "pip_check": "pass",
+    "neural_models_executed_by_tests": false
+  },
+  "package_assets": {
+    "wheel_built": true,
+    "original_xsd_sha256": "c8b9a4547074ae9d2c43ad24c81bd1ff7fe82afa419d3f7de951ec9d702c8780",
+    "xsd_bytes_preserved_by_gitattributes": true
+  },
+  "cpu_full_pipeline": {
+    "scope": "One constructed Russian document; development functional check, not independent OCR quality",
+    "device": "cpu",
+    "dtype": "float32",
+    "qwen": "qwen-0.8b",
+    "cpu_threads": 4,
+    "completed": true,
+    "terminal": "completed",
+    "seconds": 125.39747229999921,
+    "field": "principal.identifier",
+    "format_and_checksum": "pass",
+    "visual_support_coverage": true,
+    "visual_comparisons": 3,
+    "unique_blind_captures": 2,
+    "all_visual_literals_match": true,
+    "decision": "review",
+    "owner_stopped": true,
+    "calls": [
+      {
+        "op": "ingest",
+        "wall_seconds": 0.16074449999723583,
+        "generated_tokens": null
+      },
+      {
+        "op": "cheap",
+        "wall_seconds": 0.7455883000002359,
+        "generated_tokens": null
+      },
+      {
+        "op": "ocr",
+        "wall_seconds": 13.882437200001732,
+        "generated_tokens": 21
+      },
+      {
+        "op": "select",
+        "wall_seconds": 31.625866799993673,
+        "generated_tokens": 97
+      },
+      {
+        "op": "ocr",
+        "wall_seconds": 3.232657199994719,
+        "generated_tokens": 21
+      },
+      {
+        "op": "select",
+        "wall_seconds": 38.94231910000235,
+        "generated_tokens": 122
+      },
+      {
+        "op": "visual_read",
+        "wall_seconds": 21.20968900000298,
+        "generated_tokens": 45
+      },
+      {
+        "op": "visual_read",
+        "wall_seconds": 14.848237999998673,
+        "generated_tokens": 45
+      }
+    ],
+    "private_report_sha256": "368feccc0b39858a8d763cba522ab1761e92783b7aa95661660bd80efbd35813"
+  },
+  "delivered_diagnostic_cpu": {
+    "status": "pass",
+    "models_executed": [
+      "qwen-0.8b"
+    ],
+    "seconds": 50.02333720000024,
+    "generations": 1,
+    "same_capture_for_correct_and_wrong_proposals": true,
+    "owner_stopped": true,
+    "both_models_executed": false,
+    "cuda_executed": false,
+    "private_report_sha256": "59325f74d1548dbff242b3fe159c3236a29f5eb736e42e0ba39acea385c05dd3"
+  },
+  "gpu_inference_verified": false,
+  "qwen_4b_inference_verified": false,
+  "independent_quality_measured": false,
+  "production_qualified": false,
+  "remaining_scope_limits": [
+    "Bank settlement/correspondent checksum has no fully pinned primary coefficient publication and remains not_checked",
+    "Manufacturer-specific PIN/factory-number formats remain not_checked",
+    "Unknown document versions and unsupported layouts require review",
+    "MChD signature, trust, revocation and legal authority are not_verified",
+    "Target RTX GPU inference, quality and resources require target reports"
+  ],
+  "interpretation": "Synthetic execution proves component integration and strict review behavior. It is not a real-document accuracy estimate or a GPU result."
+}

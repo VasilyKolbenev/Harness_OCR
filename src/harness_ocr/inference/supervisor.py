@@ -45,7 +45,7 @@ def _worker(conn,settings):
                         value['loaded_models']=['xiaomi',settings.qwen]
                 elif op=='ingest':
                     from ..ingest import decode
-                    value=decode(args['path'],args['output'],settings)
+                    value=decode(args['path'],args['output'],settings,profile_id=args.get('profile_id'))
                 elif op=='cheap':
                     if cheap is None:
                         from .cheap import CheapReader
@@ -57,6 +57,7 @@ def _worker(conn,settings):
                         hf=HFReaders(settings)
                     if op=='ocr': value=hf.ocr(**args)
                     elif op=='select': value=hf.select(**args)
+                    elif op=='visual_read': value=hf.visual_read(**args)
                     else: raise ValueError('unknown_worker_operation')
                 conn.send({'ok':True,'value':value})
             except BaseException as e:

@@ -12,8 +12,9 @@ from importlib import resources
 
 from ..core.common import StateError, clone, digest, identifier
 from ..validators import validation_contract
+from ..typed_fields import STRUCTURED_TYPES, contract_for, typed_value_schema
 
-COMPILER_VERSION = "1.0.0"
+COMPILER_VERSION = "1.1.0"
 REQUIREMENTS = {"required_for_profile_completion", "conditional", "optional"}
 
 
@@ -80,6 +81,8 @@ def compile_profile(declaration: dict, subset: list[str] | None = None,
                 if (not isinstance(values,list) or len(values)>100 or any(not isinstance(x,str) or not x or len(x)>512 for x in values)
                         or len(set(values))!=len(values)):
                     raise ProfileError('invalid_field_'+attr)
+        if item['value_type'] in STRUCTURED_TYPES and contract_for(item) is None:
+            raise ProfileError('unsupported_typed_field_contract')
         definitions[key] = item
 
     if subset is None:
@@ -127,6 +130,12 @@ def compile_profile(declaration: dict, subset: list[str] | None = None,
     properties = {key: _field_schema() for key in selected}
     for key, prop in properties.items():
         prop["properties"]["party_role"] = {"enum": [definitions[key]["role"], None]}
+        if definitions[key]['value_type'] in STRUCTURED_TYPES:
+            value_schema=typed_value_schema(definitions[key])
+            # A literal from an unknown edition can still be displayed for
+            # review. A supported structured result remains real nested data.
+            prop['properties']['raw_value']={'anyOf':[clone(value_schema),{'type':['string','null']}]}
+            prop['properties']['canonical_value']={'anyOf':[clone(value_schema),{'type':['string','null']}]}
     output_schema = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
                      "additionalProperties": False,
                      "required": ["profile_id", "profile_version", "subset_contract_id", "fields", "needs_review"],
@@ -237,9 +246,10 @@ def assess_completion(compiled: dict, fields: dict) -> dict:
     for key in compiled["required_fields"]:
         item = fields.get(key, {})
         value = item.get("raw_value", item.get("value"))
-        if not isinstance(value, str) or not value or item.get("status") not in {"supported", "human_corrected"}:
+        if not isinstance(value, (str,dict)) or not value or item.get("status") not in {"supported", "human_corrected"}:
             missing.append(key)
-        elif item.get("validation_status") == "fail" or item.get("needs_review"):
+        elif (item.get("validation_status") == "fail" or item.get("needs_review")
+              or (compiled['field_definitions'][key]['value_type'] in STRUCTURED_TYPES and item.get('validation_status')!='pass')):
             invalid.append(key)
         if value and item.get("party_role") != compiled["field_definitions"][key]["role"]:
             wrong_role.append(key)

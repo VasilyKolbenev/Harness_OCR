@@ -361,6 +361,13 @@ def _hard_guard_reasons(policy: dict, result: dict) -> list[str]:
         if not isinstance(refs, list) or not refs or any(not isinstance(ref, str) for ref in refs):
             reasons.append("missing_field_evidence:" + key)
             continue
+        raw=value.get('raw_value',value.get('value'))
+        if isinstance(raw,dict):
+            from ..typed_fields import typed_supported
+            if not typed_supported(raw,[registry[r] for r in refs if r in registry]):
+                reasons.append('typed_evidence_not_revalidated:'+key)
+        if value.get('visual_verification_complete') is False:
+            reasons.append('visual_verification_incomplete:'+key)
         for ref in refs:
             observation = registry.get(ref)
             if (not isinstance(observation, dict) or observation.get("completed") is not True

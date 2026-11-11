@@ -1,7 +1,9 @@
 {
-  "schema_version": "harness-architecture-audit/1",
+  "schema_version": "harness-architecture-audit/2",
   "date": "2026-11-11",
-  "review_scope": "Target architecture v2, actual source modules, profiles, stage traces and integration tests. No neural inference was run by this audit.",
+  "current_revision": "0.1.0rc3; concrete commit and check results are recorded in GitHub Actions",
+  "history_policy": "historical_rc2_audit retains the previous audit verbatim. Its unimplemented7/visualgap/nativegap statements describe rc2, not the current source.",
+  "review_scope": "Independent current source/API/core/schema review plus synthetic regression execution. No neural inference was run by this audit.",
   "readiness": "software_candidate_for_target_acceptance; not production_qualified",
   "production_qualified": false,
   "independent_ocr_quality_measured": false,
@@ -9,56 +11,98 @@
   "field_contract_coverage": {
     "profiles": 10,
     "declared_fields": 96,
-    "fields_with_basic_format_or_checksum_checker": 89,
-    "fields_requiring_unimplemented_typed_or_versioned_contract": 7,
-    "basic_check_is_not_semantic_or_authenticity_proof": true,
+    "scalar_fields_with_basic_checkers": 89,
+    "typed_fields_with_implemented_registered_contracts": 7,
+    "fields_requiring_unimplemented_typed_or_versioned_contract": 0,
+    "all_format_subcases_qualified": false,
     "qualified_input_layout_versions": 0,
     "unknown_conditions_remain_review_by_default": true,
     "version_dependent_literal_cases_can_remain_not_checked": true
   },
-  "blocked_structured_fields": [
+  "current_rc3_three_parts": [
     {
-      "profile": "D04",
-      "field_key": "principal.identifier",
-      "value_type": "typed_identifier"
+      "id": "typed_fields",
+      "implemented": true,
+      "formerly_blocked_fields": [
+        {
+          "profile": "D04",
+          "field_key": "principal.identifier",
+          "value_type": "typed_identifier"
+        },
+        {
+          "profile": "D04",
+          "field_key": "representative.identifier",
+          "value_type": "typed_identifier"
+        },
+        {
+          "profile": "D05",
+          "field_key": "machine.main_identifier",
+          "value_type": "typed_identifier"
+        },
+        {
+          "profile": "D05",
+          "field_key": "ownership.entries",
+          "value_type": "record_list"
+        },
+        {
+          "profile": "D06",
+          "field_key": "machine.main_identifier",
+          "value_type": "typed_identifier"
+        },
+        {
+          "profile": "D07",
+          "field_key": "payee.accounts",
+          "value_type": "typed_bank_account_list"
+        },
+        {
+          "profile": "D10",
+          "field_key": "policy.number",
+          "value_type": "versioned_policy_identifier"
+        }
+      ],
+      "representation": "Real nested versioned raw/canonical objects, ordered per-item literal/kind/role/version/value evidence and source-linked table columns; no JSON text stuffing or guessed digit repair",
+      "runtime_integration": "grounding -> selector ID resolver -> core source proof -> validators -> generated JSONschema/API result",
+      "verification": "29 typed regressions plus dedicated declared native date transform regression; source snapshots SHA256 reverified",
+      "limits": [
+        "Manufacturer PIN/factory-specific syntax remains not_checked.",
+        "Settlement/correspondent checksum arithmetic is diagnostic only until the full primary CBR515 coefficient source is pinned; matching keys remain not_checked.",
+        "Treasury/EKS subtype requires both explicit account roles; bank checksum does not apply to treasury.",
+        "Unknown/conflicting edition markers remain unresolved/not_checked.",
+        "Raster typed roles require explicit bounded same-line labels; ownership supports unambiguous explicit delimited tables.",
+        "No real-document accuracy or production acceptance qualified."
+      ]
     },
     {
-      "profile": "D04",
-      "field_key": "representative.identifier",
-      "value_type": "typed_identifier"
+      "id": "blind_visual_verifier",
+      "implemented": true,
+      "runtime_integration": "Original source/raster/ROI pixels -> blind optical capture -> exact compare -> durable state/review; optional server setting changes binding",
+      "verification": "Synthetic pixel, crop, payload, cache, comparator, supervisor and runtime regressions",
+      "limits": [
+        "No proposed value/private gold in first optical capture input.",
+        "Readable literal agreement does not establish role, authenticity, eligibility or statistical independence.",
+        "No empirical detection gain or target RTX execution measured.",
+        "Unobservable/unsupported ROI remains review."
+      ]
     },
     {
-      "profile": "D05",
-      "field_key": "machine.main_identifier",
-      "value_type": "typed_identifier"
-    },
-    {
-      "profile": "D05",
-      "field_key": "ownership.entries",
-      "value_type": "record_list"
-    },
-    {
-      "profile": "D06",
-      "field_key": "machine.main_identifier",
-      "value_type": "typed_identifier"
-    },
-    {
-      "profile": "D07",
-      "field_key": "payee.accounts",
-      "value_type": "typed_bank_account_list"
-    },
-    {
-      "profile": "D10",
-      "field_key": "policy.number",
-      "value_type": "versioned_policy_identifier"
+      "id": "native_mchd",
+      "implemented": true,
+      "runtime_integration": "Pinned original FNS EMCHD_1 XSD + exact namespace/path/attribute mapper + server-owned source replay + typed item/full-party digest guards -> D04 state/API",
+      "verification": "Synthetic known-gold XSD/native regressions, wrong namespace/version/path/role/multiple-party/source mutation/complete-value tests",
+      "limits": [
+        "Registered ordinary non-notarial variant only; generic XML cannot inherit support.",
+        "Unknown schemas, unmapped identifier types and ambiguous multi-party scalar mapping remain review/refusal.",
+        "Signature validity, signer trust, revocation, document current validity and registry authorization are not verified.",
+        "Declared ISO date transform applies only to exact replayed D04 issue/expiry mappings; raw is preserved."
+      ]
     }
   ],
   "feature_matrix": [
     {
       "id": "F01",
       "implemented": true,
-      "runtime_integration": "observations, claims, revisions, conflicts and human corrections",
-      "verification": "fixture tests plus source-level integration audit; source contradiction handling strengthened",
+      "runtime_integration": "Durable observations/claims/revisions, typed semantic conflict identity, source-replayed native proof, literal visual-check dependencies and human CAS corrections",
+      "verification": "Synthetic core, typed, native and visual integration regressions; no optical quality measurement",
       "empirical_gain": "not_measured",
       "production_qualified": false
     },
@@ -73,18 +117,18 @@
     {
       "id": "F03",
       "implemented": true,
-      "runtime_integration": "compiled contracts, source candidate selection, validators, exact JSON projection and server-only applicability",
-      "verification": "schema validation of actual Engine/HTTP results; applicability and literal validators tested",
-      "partial_scope": "7 composite/versioned fields still not_checked; 0 qualified layouts",
+      "runtime_integration": "Compiler1.1.0 generates structured raw/canonical JSONschema; all7 formerly absent typed contracts are bound to real candidate/resolver/core validation",
+      "verification": "tests/test_typed_fields.py, test_profiles.py, actual runtime JSONschema projections and strict per-item evidence reconstruction",
+      "partial_scope": "7 implementations present; bank checksum source qualification pending, manufacturer PIN/factory formats remain not_checked; zero independently qualified layouts",
       "empirical_gain": "not_measured",
       "production_qualified": false
     },
     {
       "id": "F04",
       "implemented": true,
-      "runtime_integration": "offline trace-to-Qwen text verifier adapter; distinct verifier purpose and strict verdict parser",
-      "verification": "real supervisor interface with fixture model outputs; no gold in prompt",
-      "partial_scope": "ready adapter is text-only; visual verifier and real-model detection quality unmeasured",
+      "runtime_integration": "Text trace verifier plus blind Qwen visual optical-capture adapter, same source/raster/ROI pixel proof, deterministic exact compare and runtime review propagation",
+      "verification": "Synthetic visual worker/backend/pixel/crop/trace/state integration regressions; no neural model run by this audit",
+      "partial_scope": "Visual adapter implemented and integrated; real-model error detection gain not measured. Same model text/vision are not statistically independent; literal match does not verify party role.",
       "empirical_gain": "not_measured",
       "production_qualified": false
     },
@@ -133,90 +177,261 @@
       "production_qualified": false
     }
   ],
-  "findings": [
+  "current_audit_findings": [
     {
-      "id": "A01",
-      "severity": "high",
-      "initial_problem": "Role association worked only when label and value appeared in the same line.",
-      "status": "fixed_with_bounded_scope",
-      "implementation": [
-        "src/harness_ocr/line_graph.py",
-        "src/harness_ocr/grounding.py"
-      ],
-      "proof": "tests/test_architecture_audit.py",
-      "limits": "Unique bounded neighbor from same source/page or consecutive OCR text; ambiguous cells abstain. Spatial heuristics still need independent layout qualification."
-    },
-    {
-      "id": "A02",
-      "severity": "high",
-      "initial_problem": "Only 21 of 96 declared fields had executable type checks.",
-      "status": "partly_fixed_explicit_limits_retained",
-      "implementation": [
-        "src/harness_ocr/validators.py",
-        "src/harness_ocr/profiles/compiler.py"
-      ],
-      "proof": "tests/test_architecture_audit.py",
-      "limits": "89 fields now have basic format/checksum checks. Seven composite/versioned fields remain deliberately not_checked. Format validation never proves correct transcription or document authenticity."
-    },
-    {
-      "id": "A03",
-      "severity": "high",
-      "initial_problem": "Qwen did not receive the raw line graph or approved strategies promised by the architecture.",
-      "status": "fixed",
-      "implementation": [
-        "src/harness_ocr/grounding.py",
-        "src/harness_ocr/engine.py"
-      ],
-      "proof": "tests/test_architecture_audit.py",
-      "limits": "No geometry is invented for lines of a whole-page OCR string."
-    },
-    {
-      "id": "A04",
-      "severity": "medium",
-      "initial_problem": "The compiler accepted trusted conditions, but runtime had no source for them; all full profiles had unresolved conditions.",
-      "status": "fixed_server_hook_default_fail_closed",
-      "implementation": [
-        "src/harness_ocr/profiles/applicability.py",
-        "src/harness_ocr/engine.py"
-      ],
-      "proof": "tests/test_architecture_audit.py",
-      "limits": "No conditions inferred from missing OCR or client flags. A fixed service/document-version contract requires explicit expert-attested configuration."
-    },
-    {
-      "id": "A05",
-      "severity": "medium",
-      "initial_problem": "F04/F05/F09 were generic callback libraries with no trace/model-stage adapters.",
-      "status": "fixed_for_text_selector_diagnostics",
-      "implementation": [
-        "src/harness_ocr/research/integration.py"
-      ],
-      "proof": "tests/test_research_integration.py",
-      "limits": "No real-model diagnostic effect has been measured. Vision remains an explicit adapter gap."
-    },
-    {
-      "id": "A06",
-      "severity": "high_for_production_claim",
-      "initial_problem": "Generic XML was parsed without version-specific field mapping; a trusted-record connector did not exist.",
-      "status": "explicitly_blocked_not_claimed_supported",
-      "implementation": [
-        "src/harness_ocr/ingest.py",
-        "src/harness_ocr/engine.py"
-      ],
-      "limits": "No MChD/XSD/signature support is claimed. Versioned native schemas and an authorized connector are separate work."
-    },
-    {
-      "id": "A07",
-      "severity": "high_for_production_claim",
-      "initial_problem": "No Linux/GPU acceptance or independent field-quality qualification existed.",
-      "status": "target_acceptance_pending",
-      "limits": "Software tests cannot substitute for Docker build, real RTX execution, VRAM/p95 measurements or held-out documents."
+      "id": "RC3-API-CAS-01",
+      "priority": "P2",
+      "status": "fixed_and_independently_rechecked",
+      "file": "src/harness_ocr/api.py",
+      "problem": "Correction.expected_revision coerces bool/string/integral float to int despite advertised integer CAS and strict core type guard.",
+      "reproducer": "Correction(..., expected_revision=True or \"1\" or 1.0).expected_revision == 1",
+      "required_fix": "Field(ge=0, strict=True), with pure Pydantic regression; no HTTP/socket test required.",
+      "resolution": "src/harness_ocr/api.py Correction.expected_revision now Field(ge=0,strict=True); bool/string/float rejected before core; integer1 accepted",
+      "verification": "Pure Pydantic regression independently rerun; release integration tests cover strict revision contract"
     }
   ],
-  "handoff_conditions": [
-    "Publish source and reproducible test/build workflows as an engineering candidate with the above limits visible.",
-    "Run the target Docker/GPU doctor and the real CPU/GPU model arms before claiming GPU readiness.",
-    "Keep 0.8B and 4B comparisons on matched frozen OCR observations; treat rereading as a separate arm.",
-    "Qualify each supported profile/subset/layout on independently annotated original documents.",
-    "Do not claim 30-50 supported document types from 10 declarations or from fixture tests."
-  ]
+  "current_open_qualification_gates": [
+    "Full primary CBR515 arithmetic coefficients not yet pinned; runtime remains not_checked for settlement/correspondent.",
+    "Independent per-layout field/role/refusal quality corpus and F08 qualified production policy absent.",
+    "Target Linux/container/RTX acceptance, actual model arms, VRAM/latency and optical-verifier gain require measurement.",
+    "Native signature/trusted registry integration remains separate."
+  ],
+  "verification_evidence": [
+    {
+      "command": ".venv/Scripts/python.exe -m unittest tests.test_typed_fields tests.test_mchd tests.test_profiles tests.test_architecture_audit -q",
+      "result": "73 tests passed; no NN/network calls",
+      "scope": "Local targeted current-regression run"
+    },
+    {
+      "command": "Independent pure Pydantic CAS reproducer",
+      "result": "Before fix: True/string1/float1.0 became int1. After strict=True: all3 rejected by Pydantic; actual integer accepted.",
+      "scope": "API contract inspection; no HTTP execution"
+    },
+    {
+      "scope": "HTTP/MCP runner environment",
+      "result": "Sandbox Windows socketpair restriction is environment-specific; release owner reports elevated local suite passed. Do not count a sandbox timeout as a product regression."
+    }
+  ],
+  "historical_rc2_audit": {
+    "schema_version": "harness-architecture-audit/1",
+    "date": "2026-11-11",
+    "review_scope": "Target architecture v2, actual source modules, profiles, stage traces and integration tests. No neural inference was run by this audit.",
+    "readiness": "software_candidate_for_target_acceptance; not production_qualified",
+    "production_qualified": false,
+    "independent_ocr_quality_measured": false,
+    "gpu_inference_verified": false,
+    "field_contract_coverage": {
+      "profiles": 10,
+      "declared_fields": 96,
+      "fields_with_basic_format_or_checksum_checker": 89,
+      "fields_requiring_unimplemented_typed_or_versioned_contract": 7,
+      "basic_check_is_not_semantic_or_authenticity_proof": true,
+      "qualified_input_layout_versions": 0,
+      "unknown_conditions_remain_review_by_default": true,
+      "version_dependent_literal_cases_can_remain_not_checked": true
+    },
+    "blocked_structured_fields": [
+      {
+        "profile": "D04",
+        "field_key": "principal.identifier",
+        "value_type": "typed_identifier"
+      },
+      {
+        "profile": "D04",
+        "field_key": "representative.identifier",
+        "value_type": "typed_identifier"
+      },
+      {
+        "profile": "D05",
+        "field_key": "machine.main_identifier",
+        "value_type": "typed_identifier"
+      },
+      {
+        "profile": "D05",
+        "field_key": "ownership.entries",
+        "value_type": "record_list"
+      },
+      {
+        "profile": "D06",
+        "field_key": "machine.main_identifier",
+        "value_type": "typed_identifier"
+      },
+      {
+        "profile": "D07",
+        "field_key": "payee.accounts",
+        "value_type": "typed_bank_account_list"
+      },
+      {
+        "profile": "D10",
+        "field_key": "policy.number",
+        "value_type": "versioned_policy_identifier"
+      }
+    ],
+    "feature_matrix": [
+      {
+        "id": "F01",
+        "implemented": true,
+        "runtime_integration": "observations, claims, revisions, conflicts and human corrections",
+        "verification": "fixture tests plus source-level integration audit; source contradiction handling strengthened",
+        "empirical_gain": "not_measured",
+        "production_qualified": false
+      },
+      {
+        "id": "F02",
+        "implemented": true,
+        "runtime_integration": "durable stage traces and pure replay; research reads verified trace snapshots",
+        "verification": "hash-chain corruption, replay, trace-to-research tests",
+        "empirical_gain": "not_measured",
+        "production_qualified": false
+      },
+      {
+        "id": "F03",
+        "implemented": true,
+        "runtime_integration": "compiled contracts, source candidate selection, validators, exact JSON projection and server-only applicability",
+        "verification": "schema validation of actual Engine/HTTP results; applicability and literal validators tested",
+        "partial_scope": "7 composite/versioned fields still not_checked; 0 qualified layouts",
+        "empirical_gain": "not_measured",
+        "production_qualified": false
+      },
+      {
+        "id": "F04",
+        "implemented": true,
+        "runtime_integration": "offline trace-to-Qwen text verifier adapter; distinct verifier purpose and strict verdict parser",
+        "verification": "real supervisor interface with fixture model outputs; no gold in prompt",
+        "partial_scope": "ready adapter is text-only; visual verifier and real-model detection quality unmeasured",
+        "empirical_gain": "not_measured",
+        "production_qualified": false
+      },
+      {
+        "id": "F05",
+        "implemented": true,
+        "runtime_integration": "offline trace-to-candidate/resolver minimizer rebuilding role proofs, fixed failure predicate",
+        "verification": "removes irrelevant observations while preserving task/source and wrong-literal failure, 0 new NN calls",
+        "empirical_gain": "diagnostic behavior tested; operational time saving not measured",
+        "production_qualified": false
+      },
+      {
+        "id": "F06",
+        "implemented": true,
+        "runtime_integration": "server sampling, post-publication audit events, reviewer-only outcome endpoint and atomic critical-outcome quarantine on the same SQLite transaction",
+        "verification": "fixture controls plus authenticated outcome/evidence/revision validation and atomic critical-outcome quarantine integration tests",
+        "partial_scope": "Independent audit labels and representative drift baselines require operator data; no actual audit quality gain measured.",
+        "empirical_gain": "not_measured",
+        "production_qualified": false
+      },
+      {
+        "id": "F07",
+        "implemented": true,
+        "runtime_integration": "approved scoped cards are hash-bound, provided to Qwen and bounded by engine controls",
+        "verification": "lifecycle, version revocation, scope and unsupported directive tests",
+        "partial_scope": "not every strategy DSL action has an executor; unsupported actions force review",
+        "empirical_gain": "not_measured",
+        "production_qualified": false
+      },
+      {
+        "id": "F08",
+        "implemented": true,
+        "runtime_integration": "independent calibration/qualification/test and live server policy gateway",
+        "verification": "binding change, revocation, quarantine, hard guards and independent group statistics",
+        "partial_scope": "no qualified policy supplied; default review",
+        "empirical_gain": "not_measured",
+        "production_qualified": false
+      },
+      {
+        "id": "F09",
+        "implemented": true,
+        "runtime_integration": "offline actual candidate/selector/resolver/validator stage under explicit DEV text and role/geometry interventions",
+        "verification": "2x2 fixture study, scorer isolation and production refusal tests",
+        "partial_scope": "selector-stage diagnostic, not full optical acquisition or a production quality estimate",
+        "empirical_gain": "not_measured",
+        "production_qualified": false
+      }
+    ],
+    "findings": [
+      {
+        "id": "A01",
+        "severity": "high",
+        "initial_problem": "Role association worked only when label and value appeared in the same line.",
+        "status": "fixed_with_bounded_scope",
+        "implementation": [
+          "src/harness_ocr/line_graph.py",
+          "src/harness_ocr/grounding.py"
+        ],
+        "proof": "tests/test_architecture_audit.py",
+        "limits": "Unique bounded neighbor from same source/page or consecutive OCR text; ambiguous cells abstain. Spatial heuristics still need independent layout qualification."
+      },
+      {
+        "id": "A02",
+        "severity": "high",
+        "initial_problem": "Only 21 of 96 declared fields had executable type checks.",
+        "status": "partly_fixed_explicit_limits_retained",
+        "implementation": [
+          "src/harness_ocr/validators.py",
+          "src/harness_ocr/profiles/compiler.py"
+        ],
+        "proof": "tests/test_architecture_audit.py",
+        "limits": "89 fields now have basic format/checksum checks. Seven composite/versioned fields remain deliberately not_checked. Format validation never proves correct transcription or document authenticity."
+      },
+      {
+        "id": "A03",
+        "severity": "high",
+        "initial_problem": "Qwen did not receive the raw line graph or approved strategies promised by the architecture.",
+        "status": "fixed",
+        "implementation": [
+          "src/harness_ocr/grounding.py",
+          "src/harness_ocr/engine.py"
+        ],
+        "proof": "tests/test_architecture_audit.py",
+        "limits": "No geometry is invented for lines of a whole-page OCR string."
+      },
+      {
+        "id": "A04",
+        "severity": "medium",
+        "initial_problem": "The compiler accepted trusted conditions, but runtime had no source for them; all full profiles had unresolved conditions.",
+        "status": "fixed_server_hook_default_fail_closed",
+        "implementation": [
+          "src/harness_ocr/profiles/applicability.py",
+          "src/harness_ocr/engine.py"
+        ],
+        "proof": "tests/test_architecture_audit.py",
+        "limits": "No conditions inferred from missing OCR or client flags. A fixed service/document-version contract requires explicit expert-attested configuration."
+      },
+      {
+        "id": "A05",
+        "severity": "medium",
+        "initial_problem": "F04/F05/F09 were generic callback libraries with no trace/model-stage adapters.",
+        "status": "fixed_for_text_selector_diagnostics",
+        "implementation": [
+          "src/harness_ocr/research/integration.py"
+        ],
+        "proof": "tests/test_research_integration.py",
+        "limits": "No real-model diagnostic effect has been measured. Vision remains an explicit adapter gap."
+      },
+      {
+        "id": "A06",
+        "severity": "high_for_production_claim",
+        "initial_problem": "Generic XML was parsed without version-specific field mapping; a trusted-record connector did not exist.",
+        "status": "explicitly_blocked_not_claimed_supported",
+        "implementation": [
+          "src/harness_ocr/ingest.py",
+          "src/harness_ocr/engine.py"
+        ],
+        "limits": "No MChD/XSD/signature support is claimed. Versioned native schemas and an authorized connector are separate work."
+      },
+      {
+        "id": "A07",
+        "severity": "high_for_production_claim",
+        "initial_problem": "No Linux/GPU acceptance or independent field-quality qualification existed.",
+        "status": "target_acceptance_pending",
+        "limits": "Software tests cannot substitute for Docker build, real RTX execution, VRAM/p95 measurements or held-out documents."
+      }
+    ],
+    "handoff_conditions": [
+      "Publish source and reproducible test/build workflows as an engineering candidate with the above limits visible.",
+      "Run the target Docker/GPU doctor and the real CPU/GPU model arms before claiming GPU readiness.",
+      "Keep 0.8B and 4B comparisons on matched frozen OCR observations; treat rereading as a separate arm.",
+      "Qualify each supported profile/subset/layout on independently annotated original documents.",
+      "Do not claim 30-50 supported document types from 10 declarations or from fixture tests."
+    ]
+  }
 }

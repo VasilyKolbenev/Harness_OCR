@@ -3,13 +3,19 @@ from pathlib import Path
 import warnings
 from .util import file_sha
 
-def decode(path, output, settings):
+def decode(path, output, settings, *, profile_id=None, native_versions=('EMCHD_1',)):
     from PIL import Image, ImageOps
     path=Path(path); output=Path(output); output.mkdir(parents=True,exist_ok=True)
     if path.stat().st_size>settings.max_upload_bytes: raise ValueError('upload_size_limit')
     sha=file_sha(path)
     with path.open('rb') as f: magic=f.read(32)
-    if magic.lstrip().startswith(b'<'): return _xml(path,sha)
+    is_xml = (magic.lstrip().startswith(b'<') or magic.startswith((b'\xef\xbb\xbf',b'\xff\xfe',b'\xfe\xff'))
+              or path.suffix.lower()=='.xml')
+    if is_xml:
+        from .native.mchd import PROFILE_ID,decode_mchd
+        if profile_id==PROFILE_ID:
+            return decode_mchd(path,profile_id=profile_id,allowed_versions=native_versions)
+        return _xml(path,sha)
     pages=[]
     def save(image,n):
         if n>settings.max_pages: raise ValueError('page_limit')

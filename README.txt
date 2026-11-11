@@ -1,4 +1,4 @@
-Харнесс OCR / Harness OCR 0.1.0rc2
+Харнесс OCR / Harness OCR 0.1.0rc3
 
 Начните с README_LINUX_GPU.txt: там точные команды сборки Docker, подготовки
 весов, запуска API, doctor, lifecycle acceptance и сравнения0.8B/4B на GPU.
@@ -26,9 +26,16 @@ SHA, проверкой CUDA-переноса и OCR-метриками; в эт
 Модели не входят в исходники. Их точные ревизии, имена файлов, размеры и SHA256:
   src/harness_ocr/data/model_lock.json
 Базовый Linux image manifest закреплён в Dockerfile и deployment/base-image-lock.json.
-Лицензирование нового кода ещё не выбрано; лицензии сторонних компонентов отдельны:
+Лицензия нового кода пока не выбрана; условия сторонних компонентов отдельны:
   LICENSE.txt
   THIRD_PARTY_NOTICES.txt
+
+Новые контракты rc3: typed-fields-v1 для семи составных полей; native МЧД003
+с оригинальным XSD и source replay; blind Qwen vision для исходных ROI.
+Область применения и оставшиеся проверки:
+  docs/typed-field-contracts.md
+  docs/mchd_native.md
+  docs/visual-verifier.md
 
 Статус: release candidate, программные контракты тестируются локально. Docker/GPU
 приёмка и независимые метрики OCR остаются отдельными проверками. Значения из gold
