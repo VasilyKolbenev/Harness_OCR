@@ -19,7 +19,7 @@ class IdentifierSupportTests(unittest.TestCase):
         binding=engine.binding(contract,'qwen-0.8b')
         state=engine.documents.create_document('same-literal','a'*64,contract['profile_id'],metadata={'binding':binding})
         for n,manufacturer in enumerate(manufacturers):
-            obs={'id':'o'+str(n),'text':'Машина; Изготовитель: '+manufacturer+'; Модель: 331G; PIN: 1T0331GJCGF300253; Заводской номер: 300253',
+            obs={'id':'o'+str(n),'text':'Машина; Изготовитель: '+manufacturer+'; Модель: 331G; PIN: 1T0331GJCGF300253; Заводской номер (S/N): 300253',
                 'source_sha256':'a'*64,'completed':True,'evidence_kind':'image_region',
                 'page':1,'page_id':'p1','source_size':[100,100],'bbox':[0,0,100,100]}
             candidates=build_candidates([obs],contract)
@@ -90,7 +90,7 @@ class IdentifierSupportTests(unittest.TestCase):
         observations=[]
         for n,name in enumerate(manufacturers):
             observations.append({'id':'o'+str(n),'text':'Машина; Изготовитель: '+name+
-                '; Модель: 331G; PIN: 1T0331GJCGF300253; Заводской номер: 300253',
+                '; Модель: 331G; PIN: 1T0331GJCGF300253; Заводской номер (S/N): 300253',
                 'source_sha256':'a'*64,'completed':True,'evidence_kind':'image_region',
                 'page':1,'page_id':'p1','source_size':[100,100],'bbox':[0,0,100,100]})
         return engine,contract,binding,observations,build_candidates(observations,contract)

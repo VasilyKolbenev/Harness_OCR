@@ -14,9 +14,10 @@ from harness_ocr.machine_ids import validate_machine_identifiers,derive_machine_
 PIN='1T0331GJCGF300253'  # Constructed case at the published manual's lower boundary.
 
 
-def case(pin=PIN,serial=None,manufacturer='John Deere',model='331G',prefix='',oid='o1'):
+def case(pin=PIN,serial=None,manufacturer='John Deere',model='331G',prefix='',oid='o1',
+         factory_label='Заводской номер (S/N)'):
     text=prefix+'Машина; Изготовитель: '+manufacturer+'; Модель: '+model+'; PIN: '+pin
-    if serial is not None:text+='; Заводской номер: '+serial
+    if serial is not None:text+='; '+factory_label+': '+serial
     obs={'id':oid,'text':text,'source_sha256':'a'*64,'active':True,'completed':True,
          'evidence_kind':'image_region','page':1,'page_id':'p1','source_size':[1200,200],'bbox':[0,0,1200,200]}
     contract=ProfileRegistry().compile('D05',subset=['machine.main_identifier'])
@@ -48,6 +49,24 @@ class MachineIdTests(unittest.TestCase):
         relation=next(c for c in result['checks'] if c['check_id'].endswith('factory_serial_relation'))
         self.assertEqual(relation['status'],'pass')
         self.assertEqual(relation['evidence_ids'],['o1'])
+
+    def test_generic_factory_label_does_not_infer_serial_semantics_from_length(self):
+        for serial in ('300253',PIN):
+            with self.subTest(serial=serial):
+                raw,obs=case(serial=serial,factory_label='Заводской номер')
+                before=deepcopy((raw,obs))
+                result=validate_machine_identifiers(raw,obs)
+                self.assertEqual(result['validation_status'],'not_checked',result)
+                self.assertIn('factory_label_semantics_unresolved',result['validation_reasons'])
+                relation=next(c for c in result['checks'] if c['check_id'].endswith('factory_serial_relation'))
+                self.assertEqual(relation['status'],'not_checked')
+                self.assertEqual((raw,obs),before)
+
+    def test_explicit_machine_serial_labels_qualify_same_scoped_relation(self):
+        for label in ('Machine Serial Number','Заводской номер (S/N)',
+                      'Заводской номер (Machine Serial Number)'):
+            with self.subTest(label=label):
+                self.assertEqual(self.check(serial='300253',factory_label=label)['validation_status'],'pass')
 
     def test_changed_assigned_letter_is_not_falsely_rejected_as_vin_checksum(self):
         changed=PIN[:8]+'D'+PIN[9:]
@@ -155,6 +174,11 @@ class MachineIdTests(unittest.TestCase):
 
 
 class MachineContextIdentityTests(unittest.TestCase):
+    def test_generic_factory_label_still_derives_explicit_context_identity(self):
+        for serial in ('300253',PIN):
+            raw,obs=case(serial=serial,factory_label='Заводской номер')
+            self.assertEqual(derive_machine_context(raw,obs),{'manufacturer':'john deere','model':'331G'})
+
     def test_unknown_brand_and_model_are_literal_identity_not_format_qualification(self):
         raw,obs=case(manufacturer='Unregistered Manufacturer',model='UNKNOWN-1')
         self.assertEqual(derive_machine_context(raw,obs),{'manufacturer':'unregistered manufacturer','model':'UNKNOWN-1'})

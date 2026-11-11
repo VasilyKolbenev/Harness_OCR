@@ -20,9 +20,12 @@ _SOURCE_IDS = ['deere-omt362754x19-d4', 'aem-wmc-listing-instructions',
                'aem-wmc-public-record-262aa2ea']
 _VERSIONS = {'pin': 'pin-explicit-literal-v1', 'factory_number': 'factory-explicit-literal-v1'}
 _ROLE = re.compile(r'(?<!\w)(?:машина|машины|техника|техники)(?!\w)', re.I)
-_KIND_LABELS = {'pin': {'pin'}, 'factory_number': {'заводской номер'}}
+_SERIAL_LABELS = {'machine serial number', 'заводской номер (s/n)',
+                  'заводской номер (machine serial number)'}
+_KIND_LABELS = {'pin': {'pin'}, 'factory_number': {'заводской номер'} | _SERIAL_LABELS}
 _CELL_LABELS = {'изготовитель':'manufacturer', 'производитель':'manufacturer',
-                'модель':'model', 'pin':'pin', 'заводской номер':'factory_number'}
+                'модель':'model', 'pin':'pin', 'заводской номер':'factory_number',
+                **{label:'factory_number' for label in _SERIAL_LABELS}}
 
 
 def _registry():
@@ -82,10 +85,11 @@ def _cells(line, offset):
             role_cells+=1;cursor+=len(part)+1;continue
         match=re.fullmatch(r'([^:;|]+):\s*(\S(?:.*\S)?)',text)
         if not match:raise ValueError('machine_context_layout_not_registered')
-        kind=_CELL_LABELS.get(match[1].strip().casefold())
+        label=match[1].strip().casefold()
+        kind=_CELL_LABELS.get(label)
         if kind is None or kind in cells:raise ValueError('machine_context_unknown_or_duplicate_cell')
         start=cursor+left+match.start(2);end=cursor+left+match.end(2)
-        cells[kind]={'literal':match[2],'span':(offset+start,offset+end)}
+        cells[kind]={'literal':match[2],'span':(offset+start,offset+end),'label':label}
         cursor+=len(part)+1
     if role_cells!=1 or not {'manufacturer','model','pin'}<=set(cells):
         raise ValueError('machine_explicit_context_required')
@@ -211,6 +215,13 @@ def validate_machine_identifiers(raw, observations):
         return finish('not_checked','machine_pin_before_registered_manual_range')
     check('manual_range','pass',scope='literal_manual_cover_suffix_F300253_onward_subset')
     if 'factory_number' in cells:
+        # A generic Russian factory number can denote the complete PIN in a
+        # vehicle passport. Its length does not prove the manufacturer's SN
+        # semantics, even when it happens to equal the six-digit PIN suffix.
+        if cells['factory_number']['label'] not in _SERIAL_LABELS:
+            check('factory_serial_relation','not_checked','factory_label_semantics_unresolved',
+                  scope='generic_factory_label_not_qualified_as_machine_serial_number')
+            return finish('not_checked')
         if cells['factory_number']['literal']!=serial:return finish('fail','machine_pin_factory_number_disagreement')
         check('factory_serial_relation','pass',scope='two_independent_labelled_literals_equal_pin_positions_12_17')
     else:check('factory_serial_relation','not_applicable',scope='no_factory_literal_supplied_or_inferred')
