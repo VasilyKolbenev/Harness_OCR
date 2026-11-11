@@ -1,0 +1,74 @@
+Harness OCR third-party component references
+
+This source handoff contains no model weights. Model revisions and per-file hashes
+are in src/harness_ocr/data/model_lock.json, SHA256 of that exact manifest:
+  d629e2f5d5b282b0ebbeacf4b1e0783a12859686ee921694fb6e048333e0c1e9
+Source archive source-manifest.json records every included source file's SHA256.
+The model lock declares Apache-2.0 for the five model repositories below. Review
+the upstream license and notices when obtaining or redistributing their weights;
+this reference list does not replace those license texts or grant new rights.
+
+Xiaomi-OCR-0
+  https://huggingface.co/xiaomi-research/Xiaomi-OCR-0
+  revision bbd8cf8d21f256b3644b44cb860f3a7cecb93c30
+  https://huggingface.co/xiaomi-research/Xiaomi-OCR-0/blob/bbd8cf8d21f256b3644b44cb860f3a7cecb93c30/README.md
+
+Qwen3.5-0.8B
+  https://huggingface.co/Qwen/Qwen3.5-0.8B
+  revision 2fc06364715b967f1860aea9cf38778875588b17
+  https://huggingface.co/Qwen/Qwen3.5-0.8B/blob/2fc06364715b967f1860aea9cf38778875588b17/LICENSE
+
+Qwen3.5-4B
+  https://huggingface.co/Qwen/Qwen3.5-4B
+  revision 851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a
+  https://huggingface.co/Qwen/Qwen3.5-4B/blob/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a/LICENSE
+
+PaddlePaddle PP-OCRv5 mobile detection ONNX
+  https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx
+  revision df0bd9dee2bc627e80a2a1798ccab35a332e22d6
+
+PaddlePaddle Cyrillic PP-OCRv5 mobile recognition ONNX
+  https://huggingface.co/PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec_onnx
+  revision 2cef88145434beb8afa9dd82d77d799eb1ad7b29
+
+Python base image: official Docker library/python, 3.12.16-slim-bookworm,
+linux/amd64 manifest SHA256:
+  0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4
+Raw registry manifest inventory: deployment/base-image-lock.json.
+Python and Debian system packages retain their own licenses, including notices
+inside the container under /usr/share/doc and the upstream Python distribution.
+
+Direct Python requirements are recorded in pyproject.toml and requirements-cuda.txt.
+Official package metadata/license references:
+  https://pypi.org/project/fastapi/
+  https://pypi.org/project/uvicorn/
+  https://pypi.org/project/httpx/
+  https://pypi.org/project/pydantic/
+  https://pypi.org/project/Pillow/
+  https://pypi.org/project/pypdfium2/
+  https://pypi.org/project/PyYAML/
+  https://pypi.org/project/defusedxml/
+  https://pypi.org/project/transformers/
+  https://pypi.org/project/numpy/
+  https://pypi.org/project/safetensors/
+  https://pypi.org/project/onnxruntime/
+  https://pypi.org/project/opencv-python-headless/
+  https://pypi.org/project/pyclipper/
+  https://pypi.org/project/lm-format-enforcer/0.11.3/
+  https://github.com/noamgat/lm-format-enforcer/blob/main/LICENSE
+  https://pypi.org/project/mcp/
+  https://github.com/pytorch/pytorch/blob/main/LICENSE
+  https://github.com/pytorch/vision/blob/main/LICENSE
+
+A successful container build writes /opt/harness-build.freeze.txt. This inventory
+describes one resolved install, not a complete reproducible wheels/hash lock or
+an exhaustive redistributable notice bundle. Audit actual transitive components
+and include their license texts before publishing a built image externally.
+Полный текст Apache License 2.0 включён в LICENSES/Apache-2.0.txt.
+
+LM Format Enforcer 0.11.3 (Noam Gat) is used through its public core API for
+token-level JSON constraints. MIT license: LICENSES/lm-format-enforcer-MIT.txt,
+copied byte-for-byte from the verified PyPI distribution's LICENSE. Tokenizer
+preprocessing in inference/constraints.py follows the official Transformers
+integration's encode/decode technique while avoiding version-specific imports.
+

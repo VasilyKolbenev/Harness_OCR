@@ -1,0 +1,2 @@
+# Complete service, inference and MCP adapter pins live in pyproject.toml.
+.[inference,mcp]

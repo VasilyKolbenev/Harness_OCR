@@ -1,10 +1,27 @@
-# Local environments, models, documents and credentials
+# Runtime data and document contents never belong in this source repository.
 .venv/
+venv/
 __pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
 models/
 var/
 validation/
 reports/
 outputs/
+*.log
+*.sqlite
+*.sqlite-*
+*.safetensors
+*.onnx
+*.bin
+*.npz
 .env
 .env.*
+!.env.example
+*.part
+*.lock
