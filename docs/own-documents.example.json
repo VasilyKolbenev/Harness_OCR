@@ -1,0 +1,10 @@
+{
+  "schema_version": "harness-own-documents/1",
+  "documents": [
+    {
+      "id": "sample-01",
+      "path": "sample.pdf",
+      "profile_id": "D01"
+    }
+  ]
+}

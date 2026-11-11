@@ -13,6 +13,9 @@ var/
 validation/
 reports/
 outputs/
+test-documents/
+benchmark-data/
+own-documents-*/
 *.log
 *.sqlite
 *.sqlite-*
