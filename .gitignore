@@ -1,0 +1,10 @@
+# Local environments, models, documents and credentials
+.venv/
+__pycache__/
+models/
+var/
+validation/
+reports/
+outputs/
+.env
+.env.*
