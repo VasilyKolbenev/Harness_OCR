@@ -1,12 +1,14 @@
 import argparse
 from pathlib import Path
 import json
+from dataclasses import replace
 from .settings import Settings
 from .util import file_sha,write_json
 
 def main():
     p=argparse.ArgumentParser(prog='harness-ocr');sub=p.add_subparsers(dest='command',required=True)
-    sub.add_parser('profiles');sub.add_parser('mcp')
+    profiles=sub.add_parser('profiles');profiles.add_argument('--profile',help='Export one compiled profile and its field/result contract')
+    sub.add_parser('mcp')
     prep=sub.add_parser('prepare-models');prep.add_argument('--models',type=Path,required=True)
     prep.add_argument('--only',nargs='+',default=['xiaomi','detector','cyrillic','qwen-0.8b','qwen-4b'])
     prep.add_argument('--local-sources',type=Path);prep.add_argument('--download',action='store_true')
@@ -27,7 +29,14 @@ def main():
     args=p.parse_args()
     if args.command=='profiles':
         from .profiles import ProfileRegistry
-        value=ProfileRegistry().list()
+        registry=ProfileRegistry()
+        if args.profile:
+            contract=registry.compile(args.profile)
+            value={key:contract[key] for key in ('compiler_version','profile_id','document_id','name',
+                'profile_version','subset_contract_id','declaration_sha256','config_sha256',
+                'requested_fields','required_fields','conditionals','field_definitions','json_schema',
+                'qualification_status','automatic_acceptance_authorized')}
+        else:value=registry.list()
     elif args.command in {'prepare-models','verify-models'}:
         from .models import prepare_models,verify_models
         if args.command=='prepare-models':
@@ -66,7 +75,7 @@ def main():
     print(json.dumps(value,ensure_ascii=False,indent=2))
 
 def _settings(args,data_dir):
-    return Settings(Path(data_dir).resolve(),args.models.resolve(),device=args.device,
+    return replace(Settings.from_env(),data_dir=Path(data_dir).resolve(),models_dir=args.models.resolve(),device=args.device,
       dtype='float32' if args.device=='cpu' else 'bfloat16',max_new_tokens=args.max_new_tokens,
       call_timeout_seconds=args.call_timeout,document_timeout_seconds=args.document_timeout,
       qwen=getattr(args,'qwen','qwen-0.8b'))

@@ -1,11 +1,12 @@
 sequenceDiagram
-    actor Client as Клиент или MCP
+    actor Client as Пакетный клиент / HTTP / MCP
     participant API as HTTP сервис
     participant Jobs as Очередь SQLite
     participant Owner as Общий владелец устройства
     participant State as Состояние документа
     participant Worker as Изолированный воркер
     participant Gate as Проверки и политика
+    Note over Client: run_documents: manifest без gold; задания последовательно
     Client->>API: Загрузить файл
     API-->>Client: artifact_id и SHA
     Client->>API: Создать задание по профилю
@@ -60,6 +61,9 @@ sequenceDiagram
     Gate-->>API: Поля и решение review/accept_for_autofill
     API->>API: Аудит опубликованного результата
     API-->>Client: contract_result и evidence
+    Client->>API: Получить trace и терминальное состояние
+    API-->>Client: Трасса и статус
+    Note over Client: Сохранить result/trace/status и сводку; runtime отдельно от точности
     opt Авторизованная правка оператора
         Client->>API: Правка с expected_revision и отдельным токеном
         API->>State: Typed-evidence и человеческая CAS-ревизия
