@@ -1,5 +1,5 @@
 Харнесс OCR / Harness OCR — передача на Linux + NVIDIA GPU
-Версия исходников: 0.1.0rc3
+Версия исходников: 0.1.0rc4
 
 СТАТУС
 
@@ -208,7 +208,7 @@ CLI bench хранит сырые наблюдения и метрики пол�
 
 После успешного build и запуска на целевой машине сохраните:
 
-  docker image inspect harness-ocr:0.1.0rc3 --format '{{.Id}}'
+  docker image inspect harness-ocr:0.1.0rc4 --format '{{.Id}}'
   docker buildx imagetools inspect python:3.12.16-slim-bookworm@sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4
   docker compose run --rm --no-deps --entrypoint cat ocr /opt/harness-build.freeze.txt
 

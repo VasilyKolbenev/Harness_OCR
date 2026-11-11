@@ -1,4 +1,4 @@
-Харнесс OCR / Harness OCR 0.1.0rc3
+Харнесс OCR / Harness OCR 0.1.0rc4
 
 Начните с README_LINUX_GPU.txt: там точные команды сборки Docker, подготовки
 весов, запуска API, doctor, lifecycle acceptance и сравнения0.8B/4B на GPU.

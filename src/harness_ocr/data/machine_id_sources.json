@@ -1,0 +1,52 @@
+{
+  "schema_version": "harness-machine-id-sources/1",
+  "registry_version": "deere-omt362754x19-d4-v1",
+  "sources": [
+    {
+      "id": "deere-omt362754x19-d4",
+      "url": "https://techpubs.deere.com/api/preview/get/OMT362754X19",
+      "sha256": "24894b483183c34cf1a28e397f15509271f74bce7933754db22b6c17bf95b987",
+      "bytes": 167690,
+      "revision": "OMT362754X19 ISSUE D4; page date 042324; introduction JB38880,0001178 -19-23MAY17",
+      "pages": [1, 3, 4, 5],
+      "role": "Manufacturer's published PIN layout and printed manual applicability suffix"
+    },
+    {
+      "id": "aem-wmc-listing-instructions",
+      "url": "https://www.aem.org/getmedia/f06f42ec-82b4-47ae-94e8-3716d3a4ec67/WMC-Listing-Instructions.pdf",
+      "sha256": "cfbd9ffe3a8e9bd1b9651e2773c3268a26d6e196a751c2e4249e32381703bbb7",
+      "bytes": 154232,
+      "pages": [1],
+      "role": "Registration authority defines position 9 as an alpha calculated or assigned non-calculated CL; no public formula is contained in this document"
+    },
+    {
+      "id": "aem-wmc-public-record-262aa2ea",
+      "url": "https://www.aem.org/getmedia/992d62ea-6ea3-427d-a056-a67ae035f797/WMC-Public-Record-List.pdf",
+      "sha256": "262aa2eace7eff8f7a6f6f26c878d6e113014455810598df12d02143277f83fb",
+      "bytes": 996232,
+      "revision": "Last Updated 11/6/2026; PDF metadata creation 2026-11-06T15:09:09-06:00",
+      "pages": [5],
+      "role": "1T0 assigned to Deere & Company; this subset is not the complete WMC register"
+    }
+  ],
+  "family": {
+    "id": "deere-331g-333g-omt362754x19-d4",
+    "manufacturer_aliases": ["John Deere", "Deere & Company"],
+    "models": ["331G", "333G"],
+    "registered_wmc_subset": {"1T0": "Deere & Company"},
+    "pin_length": 17,
+    "option_codes": ["A", "B", "E", "F", "J", "K", "L", "M"],
+    "known_year_codes": {"D": 2013, "E": 2014, "F": 2015, "G": 2016, "H": 2017},
+    "manual_cover_suffix": "F300253-",
+    "registered_emission_code": "F",
+    "minimum_serial_for_registered_manual": 300253,
+    "serial_start_index": 11,
+    "serial_length": 6,
+    "check_letter": "assigned_alpha_not_a_runtime_checksum",
+    "scope": "Exact source-backed manufacturer layout subset and independently observed PIN/serial consistency. It does not prove issue, ownership, authenticity or legal registration.",
+    "unknown_codes": "not_checked",
+    "other_manufacturers_models_manual_ranges": "not_checked",
+    "illustrative_pin_below_cover_range": "1T0331GJCGF000001",
+    "illustrative_pin_is_not_qualified_as_an_issued_number": true
+  }
+}

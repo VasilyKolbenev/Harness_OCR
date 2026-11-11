@@ -15,9 +15,6 @@ from .util import digest
 
 VERSION = 'typed-fields-v1'
 CONTRACT_VERSION = '1.0'
-# CBR515 arithmetic is implemented for diagnostics, but the complete primary
-# coefficient source has not been pinned. It cannot produce a passing verdict.
-BANK_CHECKSUM_SOURCE_QUALIFIED = False
 STRUCTURED_TYPES = {'typed_identifier', 'typed_bank_account_list', 'record_list', 'versioned_policy_identifier'}
 CONTRACTS = {
     'party-identifiers-v1': {'type': 'typed_identifier', 'roles': {'principal', 'representative'},
@@ -51,8 +48,10 @@ RULES = {
     'vin': {'labels': ['VIN'], 'version': 'vin-explicit-syntax-v1', 'versions': ['VIN'],
             'pattern': r'[A-HJ-NPR-Z0-9]{17}'},
     'pin': {'labels': ['PIN'], 'version': 'pin-explicit-literal-v1', 'versions': ['PIN'], 'pattern': r'[A-Za-z0-9][A-Za-z0-9./_-]{0,127}'},
-    'factory_number': {'labels': ['заводской номер машины', 'заводской номер'],
-                       'version': 'factory-explicit-literal-v1', 'versions': ['заводской номер машины', 'заводской номер'],
+    'factory_number': {'labels': ['заводской номер машины', 'заводской номер', 'Заводской номер (S/N)',
+                                 'Заводской номер (Machine Serial Number)', 'Machine Serial Number'],
+                       'version': 'factory-explicit-literal-v1', 'versions': ['заводской номер машины', 'заводской номер',
+                            'Заводской номер (S/N)','Заводской номер (Machine Serial Number)','Machine Serial Number'],
                        'pattern': r'[A-Za-zА-Яа-яЁё0-9][A-Za-zА-Яа-яЁё0-9./_-]{0,127}'},
     'settlement': {'labels': ['расчётный счёт', 'расчетный счет', 'р/с'], 'version': 'bank-account-cbr-515',
                    'versions': ['расчётный счёт', 'расчетный счет', 'р/с'], 'pattern': r'[0-9]{20}'},
@@ -70,6 +69,34 @@ RULES = {
 TABLE_COLUMNS = {'owner': ['собственник', 'владелец', 'наименование собственника'],
                  'date': ['дата регистрации', 'дата приобретения', 'дата записи'],
                  'document': ['документ о праве собственности', 'документ-основание', 'основание']}
+
+# Account kind alone does not identify where it is held. The location must be
+# explicit in the account's own label; never pick the formula that happens to pass.
+BANK_LOCATION_LABELS={}
+for _kind,_base in {'settlement':['расчетный счет','расчётный счёт'],
+                   'correspondent':['корреспондентский счет','корреспондентский счёт']}.items():
+    for _label in _base:
+        for _suffix,_location in {'в кредитной организации':'credit_institution',
+                'в Банке России':'bank_of_russia_unit','в подразделении Банка России':'bank_of_russia_unit',
+                'в РКЦ':'bank_of_russia_unit'}.items():
+            _qualified=_label+' '+_suffix
+            BANK_LOCATION_LABELS[_qualified.casefold()]=_location
+            RULES[_kind]['labels'].append(_qualified)
+
+
+def _bank_row_closed(line):
+    """Opening context is a closed labelled record, never arbitrary prose."""
+    labels={label.casefold() for kind in ('settlement','correspondent','treasury','eks')
+            for label in RULES[kind]['labels']}|{'бик'}
+    roles={role.casefold() for role in ROLE_LABELS['payee']}
+    for cell in re.split('[;|]',line):
+        cell=cell.strip()
+        if cell.casefold() in roles:continue
+        for role in sorted(roles,key=len,reverse=True):
+            if cell.casefold().startswith(role+' '):cell=cell[len(role):].lstrip();break
+        match=re.fullmatch(r'(.+?)\s*[:№]\s*(\S(?:.*\S)?)',cell)
+        if not match or match[1].strip().casefold() not in labels|roles:return False
+    return True
 
 
 def _unresolved_edition_spans(text, kind):
@@ -119,6 +146,7 @@ def _all_spans(item):
         spans.extend(cell.get('spans', [])); spans.extend(cell.get('kind_spans', []))
     if item.get('bik'):
         spans.extend(item['bik'].get('spans', [])); spans.extend(item['bik'].get('kind_spans', []))
+    if item.get('account_location'):spans.extend(item['account_location'].get('spans',[]))
     return spans
 
 
@@ -132,7 +160,8 @@ def value_identity(raw):
     return {key:deepcopy(raw[key]) for key in ('schema_version','contract_id','contract_version','value_type')} | {
         'items':[{key:deepcopy(item[key]) for key in ('kind','version','party_role','raw_value')} |
                  ({'cells':[{'column':c['column'],'raw_value':c['raw_value']} for c in item['cells']]} if 'cells' in item else {}) |
-                 ({'bik':item['bik']['raw_value']} if 'bik' in item else {}) for item in raw['items']]}
+                 ({'bik':item['bik']['raw_value']} if 'bik' in item else {}) |
+                 ({'account_location':item['account_location']['kind']} if 'account_location' in item else {}) for item in raw['items']]}
 
 
 def _wrap(items, spec):
@@ -197,10 +226,15 @@ def _observed_items(obs, spec, contract):
                 item['version']='unresolved'
                 item['version_spans']=[_span(obs,x,y) for x,y in unresolved]
             if kind in {'settlement', 'correspondent'}:
-                hits = list(re.finditer(r'(?<!\w)БИК\s*:\s*([0-9]{9})(?![0-9])', line, re.I))
+                location=BANK_LOCATION_LABELS.get(line[a:b].casefold()) if _bank_row_closed(line) else None
+                if location:item['account_location']={'kind':location,'spans':[_span(obs,offset+a,offset+b)]}
+                hits = list(re.finditer(r'(?<!\w)БИК\s*:\s*([^;|]*)', line, re.I))
                 if len(hits)==1:
-                    hit=hits[0]; item['bik']={'raw_value':hit.group(1), 'spans':[_span(obs,offset+hit.start(1),offset+hit.end(1))],
-                          'kind_spans':[_span(obs,offset+hit.start(),offset+hit.start()+3)]}
+                    hit=hits[0];cell=hit.group(1);literal=cell.strip()
+                    if re.fullmatch('[0-9]{9}',literal):
+                        left=hit.start(1)+len(cell)-len(cell.lstrip())
+                        item['bik']={'raw_value':literal, 'spans':[_span(obs,offset+left,offset+left+len(literal))],
+                              'kind_spans':[_span(obs,offset+hit.start(),offset+hit.start()+3)]}
             items.append(item)
     return items
 
@@ -287,7 +321,7 @@ def _structure(raw):
     seen=set()
     for item in raw['items']:
         required={'item_id','kind','version','raw_value','party_role','spans','kind_spans','role_spans','version_spans','association'}
-        if not isinstance(item,dict) or not required<=set(item) or set(item)-required-{'cells','bik'}:return False
+        if not isinstance(item,dict) or not required<=set(item) or set(item)-required-{'cells','bik','account_location'}:return False
         if not isinstance(item['item_id'],str) or item['item_id'] in seen: return False
         seen.add(item['item_id'])
         if not all(isinstance(item[key],str) for key in ('kind','version','party_role')):return False
@@ -302,7 +336,7 @@ def _structure(raw):
             keys={'adapter_id','schema_version','schema_sha256','mapping_id','source_sha256','xpath','attribute','party_id'}
             if (set(assoc)!={'kind','native_validation'} or not isinstance(proof,dict) or set(proof)!=keys
                     or not all(isinstance(v,str) and v for v in proof.values()) or item['kind'] not in CONTRACTS['party-identifiers-v1']['kinds']
-                    or raw['contract_id']!='party-identifiers-v1' or 'cells' in item or 'bik' in item):return False
+                    or raw['contract_id']!='party-identifiers-v1' or 'cells' in item or 'bik' in item or 'account_location' in item):return False
             continue
         if not isinstance(assoc.get('observation_id'),str):return False
         if type(assoc.get('line_start')) is not int or type(assoc.get('line_end')) is not int or not 0<=assoc['line_start']<assoc['line_end']:return False
@@ -323,6 +357,13 @@ def _structure(raw):
             if item['kind'] not in {'settlement','correspondent'} or not isinstance(bik,dict) or set(bik)!={'raw_value','spans','kind_spans'}:return False
             if not isinstance(bik['raw_value'],str) or not re.fullmatch(r'[0-9]{9}',bik['raw_value']):return False
             if any(not isinstance(bik[key],list) or len(bik[key])!=1 or not _span_shape(bik[key][0]) for key in ('spans','kind_spans')):return False
+        if 'account_location' in item:
+            location=item['account_location']
+            if (item['kind'] not in {'settlement','correspondent'} or not isinstance(location,dict)
+                or set(location)!={'kind','spans'} or not isinstance(location.get('kind'),str)
+                or location['kind'] not in {'credit_institution','bank_of_russia_unit'}
+                or not isinstance(location['spans'],list) or len(location['spans'])!=1
+                or not all(_span_shape(s) for s in location['spans'])):return False
     return True
 
 
@@ -372,7 +413,8 @@ def typed_supported(raw, observations):
 def validate_typed(raw, spec, *, observations=None):
     canonical=deepcopy(raw)
     result={'canonical_value':canonical,'transform_ids':[], 'validation_status':'not_checked','validation_reasons':[],
-            'validation_scope':'typed_literal_evidence_and_format_only','validator_id':VERSION+':'+spec['value_type']}
+            'validation_scope':'typed_literal_evidence_and_format_only','validator_id':VERSION+':'+spec['value_type'],
+            'validation_checks':[]}
     def finish(status,reason=None):
         result['validation_status']=status;result['validation_reasons']=[] if reason is None else [reason];return result
     if not isinstance(raw,dict):return finish('not_checked','typed_or_versioned_contract_required')
@@ -414,7 +456,7 @@ def validate_typed(raw, spec, *, observations=None):
                         datetime.strptime(cell['raw_value'],'%d.%m.%Y')
                     except ValueError:return finish('fail','ownership_date_format_or_calendar')
             continue
-        if not re.fullmatch(RULES[kind]['pattern'],value):return finish('fail',kind+'_literal_format')
+        if kind not in {'settlement','correspondent'} and not re.fullmatch(RULES[kind]['pattern'],value):return finish('fail',kind+'_literal_format')
         if kind in {'settlement','correspondent','treasury','eks'} and not any(c!='0' for c in value):return finish('fail','bank_account_degenerate')
         if kind in {'inn','snils','kpp'}:
             from .validators import validate
@@ -433,13 +475,19 @@ def validate_typed(raw, spec, *, observations=None):
         if kind in {'settlement','correspondent'}:
             bik=item.get('bik')
             if not bik:review.append('bank_bik_not_observed');continue
-            digits=(bik['raw_value'][-3:] if kind=='settlement' else '0'+bik['raw_value'][4:6])+value
-            matches=sum(int(n)*[7,1,3][i%3] for i,n in enumerate(digits))%10==0
-            if not BANK_CHECKSUM_SOURCE_QUALIFIED:
-                review.append('bank_checksum_primary_source_not_qualified')
-                if not matches:review.append('unqualified_bank_checksum_mismatch')
-            elif not matches:return finish('fail','bank_account_bik_checksum')
-        if kind in {'pin','factory_number'}:review.append('manufacturer_format_not_independently_qualified')
+            from .bank_keys import validate_bank_key
+            checked=validate_bank_key(value,bik['raw_value'],location=item.get('account_location',{}).get('kind'))
+            for check in checked.get('checks',[]):
+                result['validation_checks'].append({**check,'check_id':check['check_id']+':'+item['item_id'],
+                    'evidence_ids':sorted({s['observation_id'] for s in _all_spans(item)})})
+            if checked['validation_status']=='fail':return finish('fail',';'.join(checked['validation_reasons']))
+            if checked['validation_status']!='pass':review.extend(checked['validation_reasons'])
+    if any(i['kind'] in {'pin','factory_number'} for i in raw['items']):
+        from .machine_ids import validate_machine_identifiers
+        checked=validate_machine_identifiers(raw,observations)
+        result['validation_checks'].extend(checked.get('checks',[]))
+        if checked['validation_status']=='fail':return finish('fail',';'.join(checked['validation_reasons']))
+        if checked['validation_status']!='pass':review.extend(checked['validation_reasons'])
     if review:return finish('not_checked',';'.join(sorted(set(review))))
     return finish('pass')
 
@@ -466,6 +514,8 @@ def typed_value_schema(spec):
     if spec['value_type']=='typed_bank_account_list':
         props['bik']={'type':'object','additionalProperties':False,'required':['raw_value','spans','kind_spans'],
                       'properties':{'raw_value':{'type':'string','pattern':'^[0-9]{9}$'},'spans':spans,'kind_spans':spans}}
+        props['account_location']={'type':'object','additionalProperties':False,'required':['kind','spans'],
+            'properties':{'kind':{'enum':['credit_institution','bank_of_russia_unit']},'spans':spans}}
     if spec['typed_contract_id']=='party-identifiers-v1':
         native_keys=['adapter_id','schema_version','schema_sha256','mapping_id','source_sha256','xpath','attribute','party_id']
         native={'type':'object','additionalProperties':False,'required':['kind','native_validation'],
@@ -475,5 +525,8 @@ def typed_value_schema(spec):
     return {'type':'object','additionalProperties':False,'required':['schema_version','contract_id','contract_version','value_type','items'],
             'properties':{'schema_version':{'const':VERSION},'contract_id':{'const':spec['typed_contract_id']},'contract_version':{'const':CONTRACT_VERSION},
                           'value_type':{'const':spec['value_type']},'items':{'type':'array','minItems':1,'maxItems':128,'items':{'type':'object','additionalProperties':False,
-                                'required':[key for key in props if key not in {'bik'}],'properties':props,
-                                'allOf':[{'if':{'properties':{'kind':{'const':kind}}},'then':{'properties':{'version':{'enum':[RULES[kind]['version'],'unresolved']}}}} for kind in kinds]}}}}
+                                'required':[key for key in props if key not in {'bik','account_location'}],'properties':props,
+                                'allOf':[{'if':{'properties':{'kind':{'const':kind}}},'then':{'properties':{
+                                    'version':{'enum':[RULES[kind]['version'],'unresolved']},
+                                    **({'bik':False,'account_location':False} if spec['value_type']=='typed_bank_account_list'
+                                       and kind not in {'settlement','correspondent'} else {})}}} for kind in kinds]}}}}

@@ -315,7 +315,12 @@ class Engine:
                 groups.setdefault(candidate['field_key'],[]).append(candidate)
         claims=[]
         for field,items in groups.items():
-            if len({digest(value_identity(c['raw_value'])) for c in items})<2:continue
+            from .machine_ids import derive_machine_context
+            contexts=[derive_machine_context(c['raw_value'],list(snapshot['observations'].values()))
+                for c in items if isinstance(c['raw_value'],dict)
+                and c['raw_value'].get('contract_id')=='machine-identifiers-v1']
+            if (len({digest(value_identity(c['raw_value'])) for c in items})<2
+                and len({digest(c) for c in contexts if c is not None})<2):continue
             for c in items:
                 ident='observed_conflict_'+digest([field,c['id']])[:24]
                 if ident in snapshot['claims']:continue
@@ -339,7 +344,7 @@ class Engine:
                 'party_role':current.get('party_role'),
                 'evidence_ids':current.get('evidence_ids',[]),
                 'extraction_status':'not_applicable' if inactive else ('observed' if observed else ('ambiguous' if current else 'not_observed'))}
-            value.update(validate_literal(raw,spec,observations=list(snapshot['observations'].values())) if observed else {'canonical_value':None,
+            value.update(self._validate_supports(snapshot,current,raw,spec) if observed else {'canonical_value':None,
                    'transform_ids':[],'validation_status':'not_checked','validation_reasons':['no_unambiguous_literal']})
             fields[key]=value
             if self.settings.visual_verifier and observed:
@@ -405,4 +410,36 @@ class Engine:
                      acceptance_context=digest({'policy_id':result.get('policy_id'),'decision':result['decision']})) if emit_operational_events else {
                          'deferred_until_publication':True,'selected':False}
         result['contract_result']=project_contract_result(contract,result)
+        return result
+
+    @staticmethod
+    def _validate_supports(snapshot,current,raw,spec):
+        observations=list(snapshot['observations'].values())
+        result=validate_literal(raw,spec,observations=observations)
+        if not isinstance(raw,dict):return result
+        # Equal literal values can have different manufacturer/format context.
+        # Validate every live provenance claim; selecting the favorable reading
+        # must not erase an unsupported or contradictory context on another one.
+        seen={digest(raw)};checks=list(result.get('validation_checks',[]))
+        for cid in current.get('claim_ids',[]):
+            claim=snapshot['claims'].get(cid,{})
+            if claim.get('status') not in {'supported','human_supported'}:continue
+            signature=digest(claim.get('raw_value'))
+            if signature in seen:continue
+            seen.add(signature)
+            checked=validate_literal(claim['raw_value'],spec,observations=observations)
+            if checked['validation_status']=='pass':continue
+            if result['validation_status']!='fail':result['validation_status']=checked['validation_status']
+            result['validation_reasons']=sorted(set(result['validation_reasons']+
+                ['supporting_typed_claim_not_validated:'+cid]+checked['validation_reasons']))
+            checks.append({'check_id':'typed_support:'+cid,'status':checked['validation_status'],
+                'scope':'all_live_typed_claims','reason_codes':checked['validation_reasons'],
+                'source_ids':sorted({s for c in checked.get('validation_checks',[]) for s in c.get('source_ids',[])}),
+                'evidence_ids':claim['evidence_ids']})
+        if len(checks)>256:
+            if result['validation_status']=='pass':result['validation_status']='not_checked'
+            result['validation_reasons']=sorted(set(result['validation_reasons']+['validation_check_budget_exhausted']))
+            checks=[{'check_id':'typed_support_budget','status':'not_checked','scope':'bounded_validation_check_projection',
+                'reason_codes':['validation_check_budget_exhausted'],'source_ids':[]}]
+        result['validation_checks']=checks
         return result

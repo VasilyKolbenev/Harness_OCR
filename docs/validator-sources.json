@@ -57,6 +57,105 @@
       "reference_revision": "FNS official OGRNIP structure publication; snapshot 2026-11-11",
       "retrieved_date": "2026-11-11",
       "supports": "Explicit OGRNIP label and official structure; arithmetic has no document authenticity or registry-status meaning."
+    },
+    {
+      "id": "CBR515-KONTUR-19970908",
+      "url": "https://www.kontur-extern.ru/info/normativ/document/1/24444-poryadok-rascheta-kontrolnogo-klyucha-v-nomere-litsevogo-scheta",
+      "publisher": "Контур.Экстерн",
+      "local_snapshot": "validation/bank-key-sources/kontur-cbr515.html",
+      "sha256": "3de7429473b84d79924e951653ff18278e3ad7c91ed0d59bead77fc7ff4fed1a",
+      "reference_revision": "CBR515 normative edition 1997-09-08, legal reproduction",
+      "retrieved_date": "2026-11-11",
+      "source_type": "full legal reproduction of normative text; not original CBR-hosted publication",
+      "supports": "Historical arithmetic contract RU20-CBR515-1997-v1 and published examples only. Account opening location is a separate prerequisite; current legal applicability, existence and ownership are not verified."
+    },
+    {
+      "id": "CBR515-ZAKONBASE-19970908",
+      "url": "https://zakonbase.ru/content/base/23444?print=1",
+      "publisher": "Законбаза",
+      "local_snapshot": "validation/bank-key-sources/zakonbase-cbr515.html",
+      "sha256": "153c968dfc8212da2fa66553f71edeaf32ffdf8ab5ecc1a93b63071eef2e9852",
+      "reference_revision": "CBR515 normative edition 1997-09-08, legal reproduction",
+      "retrieved_date": "2026-11-11",
+      "source_type": "full legal reproduction of normative text; not original CBR-hosted publication",
+      "supports": "Historical arithmetic contract RU20-CBR515-1997-v1 and published examples only. Account opening location is a separate prerequisite; current legal applicability, existence and ownership are not verified."
+    },
+    {
+      "id": "CBR515-RULAWS-19970908",
+      "url": "https://rulaws.ru/acts/Poryadok-rascheta-kontrolnogo-klyucha-v-nomere-litsevogo-scheta/",
+      "publisher": "RuLaws",
+      "local_snapshot": "validation/bank-key-sources/rulaws-cbr515.html",
+      "sha256": "ed0c44954409bb16b174b423ddc700ccea31abdcbfcb319a2a09a4c666b843fb",
+      "reference_revision": "CBR515 normative edition 1997-09-08, legal reproduction",
+      "retrieved_date": "2026-11-11",
+      "source_type": "full legal reproduction of normative text; not original CBR-hosted publication",
+      "supports": "Historical arithmetic contract RU20-CBR515-1997-v1 and published examples only. Account opening location is a separate prerequisite; current legal applicability, existence and ownership are not verified."
+    },
+    {
+      "id": "deere-omt362754x19-d4",
+      "url": "https://techpubs.deere.com/api/preview/get/OMT362754X19",
+      "sha256": "24894b483183c34cf1a28e397f15509271f74bce7933754db22b6c17bf95b987",
+      "bytes": 167690,
+      "reference_revision": "OMT362754X19 ISSUE D4; page date 042324; introduction JB38880,0001178 -19-23MAY17",
+      "retrieved_date": "2026-11-11",
+      "source_type": "manufacturer or registration authority primary publication",
+      "supports": "Manufacturer's published PIN layout and printed manual applicability suffix"
+    },
+    {
+      "id": "aem-wmc-listing-instructions",
+      "url": "https://www.aem.org/getmedia/f06f42ec-82b4-47ae-94e8-3716d3a4ec67/WMC-Listing-Instructions.pdf",
+      "sha256": "cfbd9ffe3a8e9bd1b9651e2773c3268a26d6e196a751c2e4249e32381703bbb7",
+      "bytes": 154232,
+      "reference_revision": "Source revision pinned by content SHA256",
+      "retrieved_date": "2026-11-11",
+      "source_type": "manufacturer or registration authority primary publication",
+      "supports": "Registration authority defines position 9 as an alpha calculated or assigned non-calculated CL; no public formula is contained in this document"
+    },
+    {
+      "id": "aem-wmc-public-record-262aa2ea",
+      "url": "https://www.aem.org/getmedia/992d62ea-6ea3-427d-a056-a67ae035f797/WMC-Public-Record-List.pdf",
+      "sha256": "262aa2eace7eff8f7a6f6f26c878d6e113014455810598df12d02143277f83fb",
+      "bytes": 996232,
+      "reference_revision": "Last Updated 11/6/2026; PDF metadata creation 2026-11-06T15:09:09-06:00",
+      "retrieved_date": "2026-11-11",
+      "source_type": "manufacturer or registration authority primary publication",
+      "supports": "1T0 assigned to Deere & Company; this subset is not the complete WMC register"
+    },
+    {
+      "id": "KIROVETS-K7M-2023-ROLE-REFERENCE",
+      "url": "https://kirovets-ptz.com/upload/iblock/491/54bup67vurolc97d4a3zaf3vov43vl8t/%D0%98%D0%BD%D1%81%D1%82%D1%80%D1%83%D0%BA%D1%86%D0%B8%D1%8F%20%D0%BF%D0%BE%20%D1%8D%D0%BA%D1%81%D0%BF%D0%BB%D1%83%D0%B0%D1%82%D0%B0%D1%86%D0%B8%D0%B8%20%D0%9A-7%D0%9C.pdf",
+      "sha256": "6a39e0b3e80d5192ab4268c0e14d1650dcee7960652cbdef946df8b040017c13",
+      "bytes": 19099973,
+      "reference_revision": "PTZ official manufacturer; 7M-00.00.010 IE, February2023",
+      "local_snapshot": "validation/machine-factory-sources/kirovets-k7m-official.pdf",
+      "retrieved_date": "2026-11-11",
+      "source_type": "primary publication, research/reference scope only",
+      "runtime_enabled": false,
+      "supports": "Pages15-16 distinguish main tractor identifier from gearbox/axle identifiers. No complete character/length/checksum rule published in inspected chapter; no manufacturer-shape qualification."
+    },
+    {
+      "id": "EEC36-2026-NONPIN-RESEARCH",
+      "url": "https://docs.eaeunion.org/upload/iblock/be8/h4udbqj752kpzfej502qel57dnoenwon/Reshenie-Soveta-_-36-ot-13-marta-2026-g.pdf",
+      "sha256": "1c67bd0a3acf7c379d7e1391a8e5791cd2299aa512eceaba9f0db57f14f7df26",
+      "bytes": 1238688,
+      "reference_revision": "EEC Council decision36,13March2026; published8April2026",
+      "local_snapshot": "validation/machine-factory-sources/eec-36-2026-official.pdf",
+      "retrieved_date": "2026-11-11",
+      "source_type": "primary publication, research/reference scope only",
+      "runtime_enabled": false,
+      "supports": "Changes14(g) add scoped non-PIN/non-VIN17-character identifier; positions12=modelyear,13-17serial. Entry/transition must be proven; existing machines and TRTC031 tractors cannot inherit this rule."
+    },
+    {
+      "id": "EEC81-2016-TRANSPORT-RESEARCH",
+      "url": "https://docs.eaeunion.org/upload/iblock/dc8/ga4prjl9ui28ak4gwfmahb0xkqs15evs/clcd_18072016_81_att.zip",
+      "sha256": "914cc3da05167dcb102e2f2e462895c04ef84690a4cd8392eb7e6cb2672239b4",
+      "bytes": 685657,
+      "reference_revision": "Official editable attachment to decision81,12July2016",
+      "local_snapshot": "validation/machine-factory-sources/eec-81-2016-word.zip",
+      "retrieved_date": "2026-11-11",
+      "source_type": "primary publication, research/reference scope only",
+      "runtime_enabled": false,
+      "supports": "R.019 v1.0.0 description; row11.1.1 main VehicleIdDetails and separate component paths; Id50Type1-50 normalized characters plus absence indicator. This is transport schema shape, not manufacturer validity or actual pinned/deployed XSD implementation."
     }
   ],
   "typed_source_manifest": {
@@ -64,11 +163,37 @@
     "sha256": "08267b56d3cc2fb2853ef94660035fb3552af7e1e5271a0f4777bea68b3c0fbe"
   },
   "typed_contract_limits": {
-    "bank_checksum_primary_source_qualified": false,
-    "bank_checksum_runtime_status": "not_checked even for matching diagnostic arithmetic; no verified full primary coefficient publication pinned",
-    "manufacturer_pin_factory_format_qualified": false,
+    "bank_checksum_original_publication_obtained": false,
+    "bank_checksum_normative_legal_reproductions_registered": true,
+    "bank_checksum_current_legal_applicability_verified": false,
+    "bank_checksum_runtime_status": "pass/fail for literal ASCII20 account+BIC9 and source-grounded opening location; missing/unknown location, treasury and special families remain not_checked",
+    "bank_kind_alone_selects_formula": false,
+    "all_manufacturer_pin_factory_formats_qualified": false,
+    "registered_machine_family": "deere-331g-333g-omt362754x19-d4",
+    "registered_family_asserts_real_number_issued": false,
+    "factory_literal_inferred_or_filled_from_pin": false,
+    "all_live_typed_claim_contexts_revalidated": true,
+    "validation_checks_exposed_in_f03_http_mcp": true,
+    "eec36_fallback_non_pin_vin_contract_runtime_enabled": false,
+    "epsm_id50_is_universal_manufacturer_grammar": false,
+    "deterministic_identifier_rules_depend_on_model_dtype": false,
     "production_qualified": false,
     "unknown_document_edition_status": "not_checked",
     "source_snapshots_are_not_accuracy_evidence": true
+  },
+  "release": "0.1.0rc4",
+  "runtime_source_registries": {
+    "bank_keys": {
+      "path": "src/harness_ocr/data/bank_key_sources.json",
+      "sha256": "2e3120170fedc37099140933b3f95b6d244ddb9df188b65bbfb3c65ce0d87c5d",
+      "algorithm_id": "RU20-CBR515-1997-v1",
+      "validation_scope": "arithmetic_consistency_only"
+    },
+    "machine_ids": {
+      "path": "src/harness_ocr/data/machine_id_sources.json",
+      "sha256": "d9854c0f805bba3af9c5f7b837c06cfebb1de4fd431c304bf0ff3d452f5105a8",
+      "family_id": "deere-331g-333g-omt362754x19-d4",
+      "validation_scope": "Exact source-backed manufacturer layout subset and independently observed PIN/serial consistency. It does not prove issue, ownership, authenticity or legal registration."
+    }
   }
 }

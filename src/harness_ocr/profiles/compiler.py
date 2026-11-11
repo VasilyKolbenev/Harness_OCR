@@ -14,7 +14,7 @@ from ..core.common import StateError, clone, digest, identifier
 from ..validators import validation_contract
 from ..typed_fields import STRUCTURED_TYPES, contract_for, typed_value_schema
 
-COMPILER_VERSION = "1.1.0"
+COMPILER_VERSION = "1.2.0"
 REQUIREMENTS = {"required_for_profile_completion", "conditional", "optional"}
 
 
@@ -45,6 +45,15 @@ def _field_schema() -> dict:
                 "validation_reasons": {"type": "array", "items": {"type": "string"}},
                 "validation_scope": {"type": "string"},
                 "validator_id": {"type": "string"},
+                "validation_checks": {"type":"array","maxItems":256,"items":{
+                    "type":"object","additionalProperties":False,
+                    "required":["check_id","status","scope","reason_codes","source_ids"],
+                    "properties":{"check_id":{"type":"string"},
+                        "status":{"enum":["pass","fail","not_checked","not_applicable"]},
+                        "scope":{"type":"string"},
+                        "reason_codes":{"type":"array","items":{"type":"string"}},
+                        "source_ids":{"type":"array","items":{"type":"string"}},
+                        "evidence_ids":{"type":"array","items":{"type":"string"}}}}},
             }}
 
 

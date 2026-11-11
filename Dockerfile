@@ -3,7 +3,7 @@
 ARG PYTHON_IMAGE=python:3.12.16-slim-bookworm@sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4
 FROM ${PYTHON_IMAGE}
 LABEL org.opencontainers.image.title="Harness OCR" \
-      org.opencontainers.image.version="0.1.0rc3" \
+      org.opencontainers.image.version="0.1.0rc4" \
       org.opencontainers.image.description="GPU release candidate; target acceptance required"
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \

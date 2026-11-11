@@ -1,0 +1,151 @@
+{
+  "schema_version": "harness-bank-key-source-registry/1",
+  "algorithm_id": "RU20-CBR515-1997-v1",
+  "validation_scope": "arithmetic_consistency_only",
+  "original_issuer": "Central Bank of the Russian Federation",
+  "act_number": "515",
+  "act_date": "1997-09-08",
+  "edition_date": "1997-09-08",
+  "original_publication": "Курьер, №30, 1997-09-23 (publisher metadata; original issue scan not obtained)",
+  "retrieved_date": "2026-11-11",
+  "source_type": "Primary normative text in explicitly identified legal reproductions; not an original CBR-hosted PDF",
+  "current_legal_applicability_verified": false,
+  "account_length": 20,
+  "bik_length": 9,
+  "key_position_1based": 9,
+  "weights": [
+    7,
+    1,
+    3,
+    7,
+    1,
+    3,
+    7,
+    1,
+    3,
+    7,
+    1,
+    3,
+    7,
+    1,
+    3,
+    7,
+    1,
+    3,
+    7,
+    1,
+    3,
+    7,
+    1
+  ],
+  "locations": {
+    "credit_institution": {
+      "prefix": "BIC positions 7-9",
+      "act_clause": "4"
+    },
+    "bank_of_russia_unit": {
+      "prefix": "0 followed by BIC positions 5-6",
+      "act_clause": "3"
+    }
+  },
+  "claims_not_established": [
+    "optical correctness",
+    "account existence",
+    "account ownership",
+    "current account status",
+    "current bank identity",
+    "legal applicability",
+    "production accuracy",
+    "automatic acceptance"
+  ],
+  "excluded_literal_families": [
+    "clearing-currency letter in account position 6",
+    "treasury accounts",
+    "EKS-specific routing",
+    "foreign account formats",
+    "ED807 two-digit MOD97 keys",
+    "UIP/UIN keys"
+  ],
+  "sources": [
+    {
+      "id": "CBR515-KONTUR-19970908",
+      "publisher": "Контур.Экстерн",
+      "url": "https://www.kontur-extern.ru/info/normativ/document/1/24444-poryadok-rascheta-kontrolnogo-klyucha-v-nomere-litsevogo-scheta",
+      "snapshot_sha256": "3de7429473b84d79924e951653ff18278e3ad7c91ed0d59bead77fc7ff4fed1a",
+      "snapshot_bytes": 158617,
+      "snapshot_path": "validation/bank-key-sources/kontur-cbr515.html",
+      "normative_clauses_checked": "1-8",
+      "worked_examples_checked": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "id": "CBR515-ZAKONBASE-19970908",
+      "publisher": "Законбаза",
+      "url": "https://zakonbase.ru/content/base/23444?print=1",
+      "snapshot_sha256": "153c968dfc8212da2fa66553f71edeaf32ffdf8ab5ecc1a93b63071eef2e9852",
+      "snapshot_bytes": 51219,
+      "snapshot_path": "validation/bank-key-sources/zakonbase-cbr515.html",
+      "normative_clauses_checked": "1-8",
+      "worked_examples_checked": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "id": "CBR515-RULAWS-19970908",
+      "publisher": "RuLaws",
+      "url": "https://rulaws.ru/acts/Poryadok-rascheta-kontrolnogo-klyucha-v-nomere-litsevogo-scheta/",
+      "snapshot_sha256": "ed0c44954409bb16b174b423ddc700ccea31abdcbfcb319a2a09a4c666b843fb",
+      "snapshot_bytes": 78066,
+      "snapshot_path": "validation/bank-key-sources/rulaws-cbr515.html",
+      "normative_clauses_checked": "1-8",
+      "worked_examples_checked": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
+  "published_examples": [
+    {
+      "number": 1,
+      "bik": "049805000",
+      "account_literal": "30101810800000000746",
+      "location": "bank_of_russia_unit",
+      "key": 8,
+      "supported_ascii_contract": true
+    },
+    {
+      "number": 2,
+      "bik": "040305000",
+      "account_literal": "40102810100000010001",
+      "location": "bank_of_russia_unit",
+      "key": 1,
+      "supported_ascii_contract": true
+    },
+    {
+      "number": 3,
+      "bik": "049805746",
+      "account_literal": "40602810700000000025",
+      "location": "credit_institution",
+      "key": 7,
+      "supported_ascii_contract": true
+    },
+    {
+      "number": 4,
+      "bik": "044541312",
+      "account_literal": "30114В84600000000501",
+      "location": "credit_institution",
+      "key": 6,
+      "supported_ascii_contract": false,
+      "research_only_published_numeric_conversion": "30114184600000000501"
+    }
+  ]
+}

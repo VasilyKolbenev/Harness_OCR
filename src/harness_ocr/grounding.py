@@ -156,14 +156,17 @@ def resolve_response(text,candidates,regions,contract):
             rejected.append({'field_key':field,'reason':'role_anchor_not_observed','candidate_ids':ids});continue
         if len({digest(value_identity(x['raw_value'])) for x in chosen})!=1:
             rejected.append({'field_key':field,'reason':'candidate_disagreement','candidate_ids':ids});continue
-        # Multiple readings of the SAME literal are provenance, not concatenation
-        # and not independent statistical evidence. Differing readings abstain.
-        claims.append({'id':'cl_'+digest([field,sorted(ids)])[:24],'field_key':field,
-              'raw_value':c['raw_value'],'evidence_ids':sorted({e for x in chosen for e in x['evidence_ids']}),'spans':c['spans'],
-              'role_evidence_ids':sorted({e for x in chosen for e in x['role_evidence_ids']}),
-              'role_spans':[s for x in chosen for s in x['role_spans']],'party_role':p['party_role'],
-              'association_proofs':[x.get('association_proof') for x in chosen],
-              'assembly':c.get('assembly'),'origin':'model','depends_on':[]})
+        # A typed value includes its own source context. Equal numeric content
+        # does not authorize discarding the other reading's raw proof/context.
+        groups=[[x] for x in chosen] if isinstance(c['raw_value'],dict) else [chosen]
+        for group in groups:
+            first=group[0]
+            claims.append({'id':'cl_'+digest([field,sorted(x['id'] for x in group)])[:24],'field_key':field,
+                  'raw_value':first['raw_value'],'evidence_ids':sorted({e for x in group for e in x['evidence_ids']}),'spans':first['spans'],
+                  'role_evidence_ids':sorted({e for x in group for e in x['role_evidence_ids']}),
+                  'role_spans':[s for x in group for s in x['role_spans']],'party_role':p['party_role'],
+                  'association_proofs':[x.get('association_proof') for x in group],
+                  'assembly':first.get('assembly'),'origin':'model','depends_on':[]})
     for r in value['reread_requests']:
         if not isinstance(r,dict) or set(r)!={'field_key','region_ids','reason_code'}:raise ValueError('invalid_reread_request')
         if not isinstance(r['field_key'],str) or r['field_key'] not in contract['field_definitions'] or not isinstance(r['region_ids'],list) or not 1<=len(r['region_ids'])<=4:
