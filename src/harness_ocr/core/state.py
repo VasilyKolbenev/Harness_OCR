@@ -15,11 +15,16 @@ from pathlib import Path
 from .common import (AuthorizationError, EvidenceError, RevisionConflict, StateError,
                      canonical, clone, digest, identifier, sha256, utc_now)
 from .evidence import literal_supported, normalize_observation
-from ..typed_fields import typed_supported, value_identity
+from ..typed_fields import typed_supported, value_identity,all_evidence_ids
 
 
 def _value_key(raw):
     return digest(value_identity(raw))
+
+
+def _claims_disagree(items):
+    return (len({(_value_key(x['raw_value']),x.get('party_role')) for x in items})>1
+        or len({x['format_context_identity'] for x in items if x.get('format_context_identity')})>1)
 
 AUTOMATED = {"model", "rule"}
 LIVE = {"supported", "human_supported"}
@@ -57,7 +62,9 @@ def _fields(state: dict) -> tuple[dict, list[dict]]:
                            "party_role": None, "needs_review": True}
         if contradictory or any(x.get("evidence_conflict") and x["status"] in LIVE for x in items):
             conflicts.append({"field_key": key, "claim_ids": [x["id"] for x in items if x["status"] == "conflict" or (x.get("evidence_conflict") and x["status"] in LIVE)],
-                              "reason": "contradictory_evidence_or_role"})
+                              "reason": "contradictory_format_context" if len({x['format_context_identity'] for x in items
+                                  if x.get('format_context_identity') and x['status'] in LIVE|{'conflict'}})>1
+                                  else "contradictory_evidence_or_role"})
         active_checks=[c for c in state.get('visual_checks',{}).values()
             if c['field_key']==key and c['verdict']!='correct'
             and any(state['claims'].get(cid,{}).get('status') in LIVE for cid in c['claim_ids'])]
@@ -281,6 +288,7 @@ class DocumentStore:
         if not isinstance(raw, dict):
             raise EvidenceError("claim_must_be_object")
         claim = clone(raw)
+        if 'format_context_identity' in claim:raise EvidenceError('caller_cannot_set_format_context_identity')
         claim.setdefault("origin", "model")
         if claim["origin"] not in AUTOMATED | {"human"}:
             raise EvidenceError("unsupported_claim_origin")
@@ -326,6 +334,14 @@ class DocumentStore:
             raise EvidenceError("typed_value_not_supported_in_evidence")
         if isinstance(raw_value,dict) and any(i['party_role']!=claim.get('party_role') for i in raw_value['items']):
             raise EvidenceError('typed_claim_party_role_mismatch')
+        if isinstance(raw_value,dict):
+            if (all(i['association']['kind']!='validated_native_xml' for i in raw_value['items'])
+                and set(evidence_ids)!=set(all_evidence_ids(raw_value))):
+                raise EvidenceError('typed_optical_evidence_contains_unbound_sources')
+            if raw_value['contract_id']=='machine-identifiers-v1':
+                from ..machine_ids import derive_machine_context
+                context=derive_machine_context(raw_value,evidence)
+                if context is not None:claim['format_context_identity']=digest(context)
         if claim["origin"] != "human" and isinstance(raw_value,str) and not literal_supported(raw_value, evidence, claim.get("spans")):
             raise EvidenceError("raw_value_not_literal_in_evidence")
         depends = claim.setdefault("depends_on", [])
@@ -369,8 +385,7 @@ class DocumentStore:
                 groups[claim["field_key"]].append(claim)
         for items in groups.values():
             humans = [x for x in items if x["origin"] == "human"]
-            signatures = {(_value_key(x["raw_value"]), x.get("party_role")) for x in items}
-            if len(signatures) > 1:
+            if _claims_disagree(items):
                 for item in items:
                     if item["origin"] == "human":
                         item["evidence_conflict"] = True
@@ -407,8 +422,7 @@ class DocumentStore:
             if item['status'] in LIVE | {'conflict'}:
                 groups[item['field_key']].append(item)
         for items in groups.values():
-            signatures={(_value_key(item['raw_value']),item.get('party_role')) for item in items}
-            if len(signatures)>1:continue
+            if _claims_disagree(items):continue
             for item in items:
                 if item['status']=='conflict' and item['origin']!='human':
                     item.update(status='retracted',status_reason='resolved_conflict_requires_new_claim_or_proof',

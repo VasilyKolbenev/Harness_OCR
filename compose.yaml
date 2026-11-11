@@ -1,7 +1,7 @@
 name: harness-ocr
 services:
   ocr:
-    image: harness-ocr:0.1.0rc3
+    image: harness-ocr:0.1.0rc4
     build:
       context: .
       args:

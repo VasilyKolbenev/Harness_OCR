@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "harness-ocr"
-version = "0.1.0rc3"
+version = "0.1.0rc4"
 description = "Evidence-grounded Russian document OCR harness"
 requires-python = ">=3.12"
 dependencies = ["fastapi==0.162.4", "uvicorn==0.54.0", "httpx==0.28.1", "pydantic==2.14.3", "Pillow==13.0.0", "pypdfium2==5.15.2", "PyYAML==6.0.3", "defusedxml==0.7.1", "lxml==6.1.3"]

@@ -1,0 +1,58 @@
+{
+  "schema_version": "harness-rc4-verification/1",
+  "release": "0.1.0rc4",
+  "date": "2026-11-11",
+  "source_package_python_sha256": "548f99efaed36b9a774f06b0e2f53e84d635136f371dd578f92e5b22569bf3ce",
+  "scope": "deterministic source, context, arithmetic and manufacturer-format gates; no new NN execution",
+  "local_software_tests": {
+    "passed": 372,
+    "total": 372,
+    "seconds": 77.247,
+    "pip_check": "pass"
+  },
+  "bank_key": {
+    "algorithm_id": "RU20-CBR515-1997-v1",
+    "registry_sha256": "2e3120170fedc37099140933b3f95b6d244ddb9df188b65bbfb3c65ce0d87c5d",
+    "normative_reproductions_crosschecked": 3,
+    "published_examples_checked": 4,
+    "decimal_examples_supported": 3,
+    "clearing_currency_example_enabled": false,
+    "scope": "arithmetic_consistency_only",
+    "opening_location_required": true,
+    "try_both_and_choose_match": false,
+    "full_bik_cell_required": true,
+    "account_existence_or_ownership_verified": false,
+    "current_legal_applicability_verified": false
+  },
+  "machine_identifiers": {
+    "family_id": "deere-331g-333g-omt362754x19-d4",
+    "registry_sha256": "d9854c0f805bba3af9c5f7b837c06cfebb1de4fd431c304bf0ff3d452f5105a8",
+    "registered_context": "one closed labelled source line; John Deere or Deere & Company; 331G/333G; 1T0; published option/year subset; F300253 onward",
+    "universal_pin_checksum_applied": false,
+    "factory_number_inferred": false,
+    "factory_relation": "only a separately observed literal equals positions 12-17 of a registered PIN",
+    "unknown_manufacturers_ranges_layouts": "not_checked",
+    "real_issued_pin_verified": false
+  },
+  "adversarial_guards": [
+    "BIK prefixes with extra suffixes or second numbers do not pass",
+    "negated or contradictory bank context cannot select a formula",
+    "typed candidates preserve every source context in separate immutable claims",
+    "explicit manufacturer/model contradictions reach F01 before selector preferences",
+    "extra optical evidence cannot be unioned with a favorable raw typed value",
+    "caller cannot set derived format context identity",
+    "all live typed claims are revalidated"
+  ],
+  "neural_calls": 0,
+  "gpu_inference_verified": false,
+  "independent_ocr_accuracy_measured": false,
+  "production_qualified": false,
+  "remaining_requirements": [
+    "trusted bank-opening/BIC-role lookup with as-of date for ordinary short-labelled invoices",
+    "manufacturer-specific rules, generations and documented applicability for more machines",
+    "versioned entity/layout association for fields on separate rows and pages",
+    "independently annotated real scans/photos including negative cases",
+    "target RTX/4B inference and quality/resource acceptance"
+  ],
+  "local_worktree_python_sha256": "682c11faf9211c2ae354e7407bb22e7ebb83f8540bff118d5410d6d40feade7f"
+}
