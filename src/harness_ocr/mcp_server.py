@@ -4,6 +4,7 @@ Stdio only: credentials come from process environment; tools cannot choose hosts
 filesystem paths, operator identities, model weights or security policy.
 """
 import os
+from . import __version__
 import httpx
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -33,7 +34,7 @@ def make_server(base_url=None,token=None):
     base_url=base_url or os.environ.get('HARNESS_SERVICE_URL','http://127.0.0.1:8080')
     token=token or os.environ.get('HARNESS_API_TOKEN','')
     if not token:raise RuntimeError('HARNESS_API_TOKEN_required')
-    server=StrictMCPServer('harness-ocr',version='0.1.0rc1',instructions=
+    server=StrictMCPServer('harness-ocr',version=__version__,instructions=
         'OCR provides source-backed extraction and review decisions. It never approves a government service.')
     def request(method,path,body=None):
         with httpx.Client(base_url=base_url,headers={'Authorization':'Bearer '+token},timeout=30) as client:
