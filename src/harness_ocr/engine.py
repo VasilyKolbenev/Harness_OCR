@@ -16,6 +16,7 @@ from .control.runtime import BindingPolicyGateway,unsupported_strategy_actions
 from .grounding import build_candidates,qwen_prompt,resolve_response,validate_literal,CANDIDATE_GENERATOR_VERSION as CANDIDATE_VERSION
 from .util import digest,utc,file_sha
 from .inference.supervisor import ModelCanceled,ModelDeadline
+from .typed_fields import value_identity
 
 class Engine:
     def __init__(self,settings,backend):
@@ -32,7 +33,7 @@ class Engine:
         self.code_sha256=digest({p.relative_to(package_root).as_posix():file_sha(p)
             for p in sorted(package_root.rglob('*.py'))})
         self.dependency_versions={}
-        for name in ('torch','transformers','tokenizers','onnxruntime','numpy','Pillow','pypdfium2','defusedxml','lm-format-enforcer'):
+        for name in ('torch','transformers','tokenizers','onnxruntime','numpy','Pillow','pypdfium2','defusedxml','lxml','lm-format-enforcer'):
             try:self.dependency_versions[name]=metadata.version(name)
             except metadata.PackageNotFoundError:self.dependency_versions[name]=None
     def active_cards(self,contract):
@@ -53,6 +54,10 @@ class Engine:
             'fixture_permitted':self.settings.allow_fixture,
             'python':platform.python_version(),'machine':platform.machine(),'dependencies':self.dependency_versions,
             'limits':limits,'mode':mode,'allow_reread':allow_reread,'max_reread_rounds':2,
+            'visual_verifier':{'enabled':self.settings.visual_verifier,'max_regions':self.settings.max_visual_regions,
+                'protocol':'blind-visual-capture-v1','comparison':'complete_original_observation_literal',
+                'max_pixels':589824,'max_side':1536,'processor_min_pixels':1024,
+                'processor_alignment':32,'processor_may_resize_to_minimum':True},
             'sampler':{'do_sample':False,'use_cache':True,'thinking':False,'logits_to_keep':1,
                        'output_format':'server-generated-json-schema','constraint_engine':'lm-format-enforcer'},
             'attention':'eager','cpu_threads':{'ctc_intraop':self.settings.cpu_threads,'ctc_interop':1,
@@ -77,10 +82,11 @@ class Engine:
         binding=self.binding(contract,qwen,mode,allow_reread,strategy_cards=cards)
         start=time.perf_counter();stage='created';errors=[];calls=[]
         snapshot=self.documents.create_document(document_id,source_sha,contract['profile_id'],
-             metadata={'binding':binding,'subset':contract['requested_fields']})
+             metadata={'binding':binding,'subset':contract['requested_fields'],'source_path':str(Path(path).resolve())})
         observations=[];regions=[];optics_completed=True;selector_complete=True;optics=None
         strategy_reasons=[];strategy_info={'active_cards':[],'unsupported_actions':[]}
         unresolved_rereads=[]
+        visual_checks=[];visual_regions={};visual_attempted=False;native_ingestion=None
         def record(name,inputs,outputs,kind='pure',status='completed'):
             self.trace.record(name,inputs,outputs,{'pipeline_version':'1','contract':contract['config_sha256']},
                document_id=document_id,stage_kind=kind,deterministic=kind=='pure',status=status)
@@ -108,12 +114,27 @@ class Engine:
                 observations=json.loads(json.dumps(shared_optics['observations']));regions=shared_optics['regions']
                 optics_completed=shared_optics['completed'];record('frozen_optics',{'source_sha256':source_sha},shared_optics)
             else:
-                ingestion=call('ingest',{'path':str(path),'output':str(self.root/'rasters'/document_id)})
+                ingestion=call('ingest',{'path':str(path),'output':str(self.root/'rasters'/document_id),
+                    'profile_id':contract['profile_id']})
                 if ingestion['source_sha256']!=source_sha:raise ValueError('input_source_sha_mismatch')
+                if ingestion.get('native_validation') is not None:
+                    from .native.mchd import verify_native_result
+                    if contract['profile_id']!='power_of_attorney_evidence_v1' or not verify_native_result(ingestion,Path(path)):
+                        raise ValueError('native_adapter_source_replay_failed')
+                if ingestion.get('native_validation') is not None:
+                    native_ingestion={k:v for k,v in ingestion.items() if k not in {'observations','field_candidates','native_claims','pages'}}
+                    strategy_reasons.extend('native_'+r for r in ingestion.get('review_reasons',[]))
+                    strategy_reasons.append('native_signature_revocation_authority_not_verified')
                 record('ingest',{'source_sha256':source_sha},ingestion,'external')
                 observations.extend(ingestion['observations'])
                 if observations:
-                    snapshot=self.documents.revise(document_id,observations=observations,expected_revision=snapshot['revision'],reason='native_observations')
+                    snapshot=self.documents.revise(document_id,observations=observations,
+                        native_result=ingestion if ingestion.get('native_validation') else None,
+                        expected_revision=snapshot['revision'],reason='native_observations')
+                if ingestion.get('native_claims'):
+                    if not ingestion.get('native_validation'):raise ValueError('unvalidated_native_claims')
+                    native=[c for c in ingestion['native_claims'] if c['field_key'] in contract['requested_fields']]
+                    if native:snapshot=self.documents.revise(document_id,claims=native,expected_revision=snapshot['revision'],reason='replayed_native_claims')
                 if ingestion.get('native_bridge')=='generic_xml_unqualified':
                     # A generic XML parser is not a versioned service adapter.
                     # Its text must not inherit a raster profile's calibration.
@@ -125,6 +146,12 @@ class Engine:
                     cheap=call('cheap',{'page':page,'source_sha256':source_sha,
                                   'output_dir':str(self.root/'regions'/document_id/page['page_id'])})
                     observations.extend(cheap['observations']);regions.extend(cheap['regions'])
+                    if self.settings.visual_verifier:
+                        from .inference.vision import make_visual_region
+                        for region in cheap['regions']:
+                            for obs in cheap['observations']:
+                                if obs.get('page_id')==region['page_id'] and obs.get('quad')==region.get('quad'):
+                                    visual_regions[obs['id']]=make_visual_region(path,page,region,source_sha256=source_sha)
                     snapshot=self.documents.revise(document_id,observations=cheap['observations'],expected_revision=snapshot['revision'],reason='ctc_observations')
                     optics_completed=optics_completed and cheap.get('completed',True)
                     read=call('ocr',{'path':page['path']})
@@ -133,9 +160,17 @@ class Engine:
                         'source_size':page['source_size'],'bbox':[0,0,*page['source_size']],
                         'completed':read['completed'],'capture_id':document_id+'_xiaomi_'+page['page_id'],
                         'model_id':'xiaomi','raster_transform_proof':page['transform']})
+                    if self.settings.visual_verifier:
+                        # Page-wide Xiaomi claims have page-wide evidence. They
+                        # must be compared against the full page, never a guessed
+                        # character crop or a substring of a line reading.
+                        visual_regions[observations[-1]['id']]=make_visual_region(path,page,source_sha256=source_sha)
                     optics_completed=optics_completed and read['completed']
                     snapshot=self.documents.revise(document_id,observations=[observations[-1]],expected_revision=snapshot['revision'],reason='xiaomi_observation')
-            optics={'source_sha256':source_sha,'observations':observations,'regions':regions,'completed':optics_completed}
+            if shared_optics is not None:
+                visual_regions=shared_optics.get('visual_regions',{})
+            optics={'source_sha256':source_sha,'observations':observations,'regions':regions,
+                'visual_regions':visual_regions,'completed':optics_completed}
             if shared_optics is not None:
                 snapshot=self.documents.revise(document_id,observations=observations,expected_revision=snapshot['revision'],reason='frozen_optical_observations')
             record('strategy_retrieval',{'profile_id':contract['profile_id']},cards,'external')
@@ -159,6 +194,7 @@ class Engine:
             while True:
                 checkpoint();stage='candidates';candidates=build_candidates(observations,contract)
                 record('candidates',{'observations':observations,'contract':contract},candidates)
+                if native_ingestion is not None:break
                 # Conflicting anchored observations must reach F01 even if the
                 # selector chooses only its preferred reading. Selection is not
                 # authority to erase an independently observed contradiction.
@@ -170,7 +206,7 @@ class Engine:
                     proposals=[]
                     for field in contract['requested_fields']:
                         group=[c for c in candidates.values() if c['field_key']==field and c['role_verified']]
-                        values={c['raw_value'] for c in group}
+                        values={digest(value_identity(c['raw_value'])) for c in group}
                         if len(values)==1:
                             c=group[0];proposals.append({'field_key':field,'candidate_ids':[c['id']],'party_role':c['party_role']})
                     response=json.dumps({'proposals':proposals,'reread_requests':[]})
@@ -209,7 +245,50 @@ class Engine:
                          'model_id':'xiaomi','raster_transform_proof':region.get('transform',{})})
                     optics_completed=optics_completed and read['completed']
                 snapshot=self.documents.revise(document_id,observations=add,expected_revision=snapshot['revision'],reason='bounded_reread')
+                for obs in add:
+                    rid=obs['id'].removesuffix('_reread')
+                    match=next((d for d in visual_regions.values() if d['id']==rid),None)
+                    if match:visual_regions[obs['id']]=match
                 observations.extend(add);round_no+=1
+            if self.settings.visual_verifier and not visual_attempted:
+                visual_attempted=True;stage='visual_verifier'
+                requests=[];approved_regions={}
+                for field in contract['requested_fields']:
+                    current=snapshot['fields'].get(field,{})
+                    if current.get('raw_value') is None:continue
+                    claims=[snapshot['claims'][cid] for cid in current.get('claim_ids',[])
+                        if snapshot['claims'][cid]['status']=='supported']
+                    # XML has structural proofs, no invented image. Vision is only raster.
+                    if claims and all(snapshot['observations'][oid]['evidence_kind']=='structured_xml'
+                        for claim in claims for oid in claim['evidence_ids']):continue
+                    ids=sorted({oid for claim in claims for oid in claim['evidence_ids']})
+                    for oid in ids:
+                        if oid not in visual_regions:
+                            strategy_reasons.append('visual_verification_unavailable_or_budget:'+field);continue
+                        region_key=digest(visual_regions[oid])
+                        if region_key not in approved_regions:
+                            if len(approved_regions)>=self.settings.max_visual_regions:
+                                strategy_reasons.append('visual_verification_unavailable_or_budget:'+field);continue
+                            approved_regions[region_key]=visual_regions[oid]
+                        requests.append((field,oid,[c['id'] for c in claims if oid in c['evidence_ids']],region_key))
+                captures={}
+                for field,oid,claim_ids,region_key in requests:
+                    if region_key not in captures:
+                        out=call('visual_read',{'name':qwen,'regions':[approved_regions[region_key]]})
+                        if (out.get('completed') is not True or out.get('stop_reason')!='eos'
+                            or out.get('modality')!='vision' or out.get('purpose')!='blind_optical_capture'
+                            or not isinstance(out.get('captures'),list) or len(out['captures'])!=1
+                            or out['captures'][0].get('provenance',{}).get('region_id')!=visual_regions[oid]['id']):
+                            raise ValueError('visual_generation_incomplete_or_provenance_invalid')
+                        captures[region_key]=out['captures'][0]
+                        snapshot=self.documents.revise(document_id,observations=[captures[region_key]],
+                            expected_revision=snapshot['revision'],reason='blind_visual_capture')
+                        observations.append(captures[region_key])
+                    check={'id':'visual_check_'+digest([field,oid,captures[region_key]['id'],claim_ids])[:24],
+                        'field_key':field,'claim_ids':claim_ids,'capture_id':captures[region_key]['id'],'expected_observation_id':oid}
+                    snapshot=self.documents.revise(document_id,visual_checks=[check],
+                        expected_revision=snapshot['revision'],reason='blind_visual_literal_comparison')
+                    visual_checks.append(snapshot['visual_checks'][check['id']])
         except ModelCanceled as e:terminal='canceled';errors.append(str(e))
         except ModelDeadline as e:terminal='budget_exhausted';errors.append(str(e))
         except Exception as e:terminal='failed';errors.append(type(e).__name__+':'+str(e)[:250])
@@ -223,6 +302,9 @@ class Engine:
         result.update(errors=errors,stopped_at=stage,calls=calls,seconds=time.perf_counter()-start,
                       mode=mode,qwen=qwen,finished_utc=utc(),optics=optics,strategy_runtime=strategy_info,
                       unresolved_rereads=unresolved_rereads)
+        result['native_ingestion']=native_ingestion
+        result['visual_verification']={'enabled':self.settings.visual_verifier,'checks':visual_checks,
+            'max_regions':self.settings.max_visual_regions,'automatic_acceptance_authority':False}
         record('result',{'revision':snapshot['revision']}, {k:v for k,v in result.items() if k!='optics'})
         return result
     @staticmethod
@@ -233,7 +315,7 @@ class Engine:
                 groups.setdefault(candidate['field_key'],[]).append(candidate)
         claims=[]
         for field,items in groups.items():
-            if len({c['raw_value'] for c in items})<2:continue
+            if len({digest(value_identity(c['raw_value'])) for c in items})<2:continue
             for c in items:
                 ident='observed_conflict_'+digest([field,c['id']])[:24]
                 if ident in snapshot['claims']:continue
@@ -244,6 +326,10 @@ class Engine:
         return claims
     def project(self,snapshot,contract,binding,*,terminal='completed',complete=True,review_reasons=(),
                 emit_operational_events=True):
+        native=snapshot.get('native_ingestion')
+        if native:
+            review_reasons=[*review_reasons,'native_signature_revocation_authority_not_verified',
+                *['native_'+r for r in native.get('review_reasons',[])]]
         fields={}
         for key,spec in contract['field_definitions'].items():
             current=snapshot['fields'].get(key,{});raw=current.get('raw_value')
@@ -253,14 +339,30 @@ class Engine:
                 'party_role':current.get('party_role'),
                 'evidence_ids':current.get('evidence_ids',[]),
                 'extraction_status':'not_applicable' if inactive else ('observed' if observed else ('ambiguous' if current else 'not_observed'))}
-            value.update(validate_literal(raw,spec) if observed else {'canonical_value':None,
+            value.update(validate_literal(raw,spec,observations=list(snapshot['observations'].values())) if observed else {'canonical_value':None,
                    'transform_ids':[],'validation_status':'not_checked','validation_reasons':['no_unambiguous_literal']})
             fields[key]=value
+            if self.settings.visual_verifier and observed:
+                live_claims=[snapshot['claims'][cid] for cid in current.get('claim_ids',[])
+                    if snapshot['claims'][cid]['status'] in {'supported','human_supported'}]
+                raster_ids={oid for claim in live_claims for oid in claim['evidence_ids']
+                    if snapshot['observations'][oid]['evidence_kind']=='image_region'}
+                verified_ids={check['expected_observation_id'] for check in snapshot.get('visual_checks',{}).values()
+                    if check['field_key']==key and check['verdict']=='correct'
+                    and any(cid in current.get('claim_ids',[]) for cid in check['claim_ids'])
+                    and all(snapshot['observations'].get(oid,{}).get('active') is True
+                        and snapshot['observations'][oid].get('completed') is True
+                        for oid in (check['capture_id'],check['expected_observation_id']))}
+                if raster_ids:value['visual_verification_complete']=raster_ids<=verified_ids
+                if raster_ids and not value['visual_verification_complete']:
+                    review_reasons=[*review_reasons,'visual_verification_incomplete:'+key]
             if inactive and raw is not None:
                 review_reasons=[*review_reasons,'not_applicable_field_observed:'+key]
         result={'document_id':snapshot['document_id'],'source_sha256':snapshot['source_sha256'],
           **binding,'revision':snapshot['revision'],'fields':fields,'observations':snapshot['observations'],
           'conflicts':snapshot['conflicts'],'required_fields':contract['required_fields'],
+          'visual_checks':snapshot.get('visual_checks',{}),
+          'native_ingestion':native,
           'triggered_conditional_fields':[k for k,v in contract['conditionals'].items() if v['applies'] is True],
           'unresolved_conditions':contract['unknown_conditionals'],
           'conditional_applicability':{k:v['applies'] for k,v in contract['conditionals'].items()},

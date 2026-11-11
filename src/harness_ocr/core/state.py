@@ -15,6 +15,11 @@ from pathlib import Path
 from .common import (AuthorizationError, EvidenceError, RevisionConflict, StateError,
                      canonical, clone, digest, identifier, sha256, utc_now)
 from .evidence import literal_supported, normalize_observation
+from ..typed_fields import typed_supported, value_identity
+
+
+def _value_key(raw):
+    return digest(value_identity(raw))
 
 AUTOMATED = {"model", "rule"}
 LIVE = {"supported", "human_supported"}
@@ -36,7 +41,7 @@ def _fields(state: dict) -> tuple[dict, list[dict]]:
                            "evidence_ids": chosen["evidence_ids"], "party_role": chosen.get("party_role"),
                            "needs_review": bool(contradictory or chosen.get("evidence_conflict"))}
         elif live:
-            values = {x["raw_value"] for x in live}
+            values = {_value_key(x["raw_value"]) for x in live}
             if len(values) != 1:
                 raise StateError("internal_unresolved_live_claim_conflict")
             chosen = live[-1]
@@ -53,6 +58,13 @@ def _fields(state: dict) -> tuple[dict, list[dict]]:
         if contradictory or any(x.get("evidence_conflict") and x["status"] in LIVE for x in items):
             conflicts.append({"field_key": key, "claim_ids": [x["id"] for x in items if x["status"] == "conflict" or (x.get("evidence_conflict") and x["status"] in LIVE)],
                               "reason": "contradictory_evidence_or_role"})
+        active_checks=[c for c in state.get('visual_checks',{}).values()
+            if c['field_key']==key and c['verdict']!='correct'
+            and any(state['claims'].get(cid,{}).get('status') in LIVE for cid in c['claim_ids'])]
+        if active_checks:
+            fields[key]['needs_review']=True
+            conflicts.append({'field_key':key,'claim_ids':sorted({cid for c in active_checks for cid in c['claim_ids']}),
+                'check_ids':[c['id'] for c in active_checks],'reason':'blind_visual_disagreement_or_abstention'})
     return fields, conflicts
 
 
@@ -138,12 +150,14 @@ class DocumentStore:
         db.execute("INSERT INTO document_revisions VALUES(?,?,?,?,?,?)",
                    (state["document_id"], state["revision"], raw, digest(state), canonical(event), utc_now()))
 
-    def revise(self, document_id: str, *, observations=(), claims=(), invalidate=(), expected_revision: int | None = None,
+    def revise(self, document_id: str, *, observations=(), claims=(), visual_checks=(), native_result=None,
+               invalidate=(), expected_revision: int | None = None,
                actor: str = "engine", reason: str = "evidence_update", allow_human: bool = False) -> dict:
         identifier(document_id, "document_id")
         if not isinstance(actor, str) or not actor:
             raise AuthorizationError("actor_required")
         incoming_observations, incoming_claims, invalidated = clone(list(observations)), clone(list(claims)), list(invalidate)
+        native_result=clone(native_result)
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT state_json FROM documents WHERE document_id=?", (document_id,)).fetchone()
@@ -157,8 +171,20 @@ class DocumentStore:
             before = canonical(state)
             revision = state["revision"] + 1
             allowed = {state["source_sha256"], *state["metadata"].get("allowed_source_sha256", [])}
+            native_verified_registry=None
+            if native_result is not None:
+                from ..native.mchd import verify_native_result,PROFILE_ID
+                if (state['profile_id']!=PROFILE_ID or native_result.get('source_sha256')!=state['source_sha256']
+                    or not verify_native_result(native_result,state['metadata'].get('source_path'))):
+                    raise EvidenceError('native_result_source_replay_failed')
+                summary={k:clone(v) for k,v in native_result.items()
+                    if k not in {'observations','field_candidates','native_claims','pages'}}
+                if state.get('native_ingestion') not in (None,summary):raise EvidenceError('immutable_native_ingestion_changed')
+                state['native_ingestion']=summary
+                native_verified_registry={o['id']:o for o in native_result['observations']}
             for obs in incoming_observations:
-                normalized = normalize_observation(obs, allowed, mode=self.mode)
+                normalized = normalize_observation(obs, allowed, mode=self.mode,
+                    native_source=state["metadata"].get("source_path"),native_verified_registry=native_verified_registry)
                 oid = normalized["id"]
                 if oid in state["claims"]:
                     raise EvidenceError("id_collision_between_claim_and_observation")
@@ -190,6 +216,11 @@ class DocumentStore:
                 state["claims"][cid] = claim
 
             self._assert_acyclic(state["claims"])
+            for item in visual_checks:
+                checked=self._visual_check(item,state)
+                old=state.setdefault('visual_checks',{}).get(checked['id'])
+                if old is not None and old!=checked:raise EvidenceError('immutable_visual_check_changed')
+                state['visual_checks'][checked['id']]=checked
             for node_id in invalidated:
                 identifier(node_id, "invalidation_id")
                 if node_id in state["observations"]:
@@ -219,6 +250,33 @@ class DocumentStore:
         return clone(state)
 
     @staticmethod
+    def _visual_check(item,state):
+        from ..inference.vision import compare_visual_capture
+        if not isinstance(item,dict) or set(item)!={'id','field_key','claim_ids','capture_id','expected_observation_id'}:
+            raise EvidenceError('visual_check_requires_closed_source_references')
+        check=clone(item);identifier(check['id'],'visual_check_id')
+        refs=check['claim_ids']
+        if not isinstance(refs,list) or not refs or len(set(refs))!=len(refs):raise EvidenceError('visual_check_requires_claims')
+        original=state['observations'].get(check['expected_observation_id'],{})
+        captured=state['observations'].get(check['capture_id'],{})
+        if not all(o.get('active') is True and o.get('completed') is True for o in (original,captured)):
+            raise EvidenceError('visual_check_evidence_not_active_complete')
+        if captured.get('purpose')!='blind_optical_capture':raise EvidenceError('visual_check_not_blind_capture')
+        for key in ('source_sha256','page','page_id','source_size'):
+            if original.get(key)!=captured.get(key):raise EvidenceError('visual_check_source_geometry_mismatch')
+        geometry='quad' if original.get('quad') is not None else 'bbox'
+        if original.get(geometry) is None or original.get(geometry)!=captured.get(geometry):
+            raise EvidenceError('visual_check_requires_identical_roi')
+        for cid in refs:
+            claim=state['claims'].get(cid,{})
+            if claim.get('field_key')!=check['field_key'] or check['expected_observation_id'] not in claim.get('evidence_ids',[]):
+                raise EvidenceError('visual_check_not_bound_to_claim')
+        sealed={k:v for k,v in captured.items() if k not in {'active','created_revision'}}
+        check.update(compare_visual_capture(sealed,original['text']))
+        check['comparison_scope']='complete_original_observation_literal'
+        return check
+
+    @staticmethod
     def _normalize_claim(raw, state, *, allow_human):
         if not isinstance(raw, dict):
             raise EvidenceError("claim_must_be_object")
@@ -231,8 +289,11 @@ class DocumentStore:
         identifier(claim.get("field_key"), "field_key")
         if state["metadata"].get("field_keys") and claim["field_key"] not in state["metadata"]["field_keys"]:
             raise EvidenceError("field_not_in_profile")
-        if not isinstance(claim.get("raw_value"), str) or not claim["raw_value"]:
-            raise EvidenceError("raw_value_must_be_nonempty_literal_string")
+        raw_value=claim.get("raw_value")
+        if not isinstance(raw_value, (str,dict)) or not raw_value:
+            raise EvidenceError("raw_value_must_be_nonempty_literal_or_typed_value")
+        if len(canonical(raw_value))>250000:
+            raise EvidenceError("raw_value_size_limit")
         evidence_ids = claim.get("evidence_ids")
         if not isinstance(evidence_ids, list) or not evidence_ids or len(evidence_ids) != len(set(evidence_ids)):
             raise EvidenceError("claim_requires_unique_evidence_ids")
@@ -261,7 +322,11 @@ class DocumentStore:
             text = state["observations"][span["observation_id"]]["text"]
             if type(start) is not int or type(end) is not int or not 0 <= start < end <= len(text):
                 raise EvidenceError("invalid_role_span_offsets")
-        if claim["origin"] != "human" and not literal_supported(claim["raw_value"], evidence, claim.get("spans")):
+        if isinstance(raw_value,dict) and not typed_supported(raw_value,evidence):
+            raise EvidenceError("typed_value_not_supported_in_evidence")
+        if isinstance(raw_value,dict) and any(i['party_role']!=claim.get('party_role') for i in raw_value['items']):
+            raise EvidenceError('typed_claim_party_role_mismatch')
+        if claim["origin"] != "human" and isinstance(raw_value,str) and not literal_supported(raw_value, evidence, claim.get("spans")):
             raise EvidenceError("raw_value_not_literal_in_evidence")
         depends = claim.setdefault("depends_on", [])
         if not isinstance(depends, list) or any(not isinstance(x, str) for x in depends):
@@ -304,7 +369,7 @@ class DocumentStore:
                 groups[claim["field_key"]].append(claim)
         for items in groups.values():
             humans = [x for x in items if x["origin"] == "human"]
-            signatures = {(x["raw_value"], x.get("party_role")) for x in items}
+            signatures = {(_value_key(x["raw_value"]), x.get("party_role")) for x in items}
             if len(signatures) > 1:
                 for item in items:
                     if item["origin"] == "human":
@@ -342,7 +407,7 @@ class DocumentStore:
             if item['status'] in LIVE | {'conflict'}:
                 groups[item['field_key']].append(item)
         for items in groups.values():
-            signatures={(item['raw_value'],item.get('party_role')) for item in items}
+            signatures={(_value_key(item['raw_value']),item.get('party_role')) for item in items}
             if len(signatures)>1:continue
             for item in items:
                 if item['status']=='conflict' and item['origin']!='human':
@@ -355,7 +420,7 @@ class DocumentStore:
     def add_claim(self, document_id, claim, *, expected_revision=None):
         return self.revise(document_id, claims=[claim], expected_revision=expected_revision)
 
-    def human_correct(self, document_id: str, field_key: str, raw_value: str, evidence_ids: list[str], *, actor: str,
+    def human_correct(self, document_id: str, field_key: str, raw_value: str | dict, evidence_ids: list[str], *, actor: str,
                       expected_revision: int, authorized: bool = False, party_role: str | None = None) -> dict:
         if authorized is not True:
             raise AuthorizationError("human_correction_not_authorized")

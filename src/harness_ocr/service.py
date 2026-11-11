@@ -178,6 +178,8 @@ class Service:
                 if isinstance(reason,str) and reason.startswith('unsupported_strategy_')]
         if (result or {}).get('unresolved_rereads'):
             sticky.append('unresolved_reread_requests')
+        sticky.extend(reason for reason in (result or {}).get('reason_codes',[])
+            if isinstance(reason,str) and reason.startswith(('visual_verification_','native_')))
         r=job['request'];contract=self.engine.compile_contract(r['profile_id'],subset=r.get('subset'))
         original_binding=snapshot['metadata']['binding']
         current_binding=self.engine.binding(contract,r.get('qwen') or self.settings.qwen,
@@ -206,6 +208,14 @@ class Service:
         if job['status'] not in TERMINAL:raise ValueError('review_requires_terminal_job')
         r=job['request'];contract=self.engine.compile_contract(r['profile_id'],subset=r.get('subset'))
         if correction['field_key'] not in contract['field_definitions']:raise ValueError('unknown_review_field')
+        spec=contract['field_definitions'][correction['field_key']]
+        from .typed_fields import STRUCTURED_TYPES
+        raw=correction['raw_value']
+        if spec['value_type'] in STRUCTURED_TYPES:
+            if not isinstance(raw,dict) or raw.get('typed_contract_id',raw.get('contract_id'))!=spec['typed_contract_id']:
+                raise ValueError('review_requires_matching_typed_field_contract')
+            if any(i.get('party_role')!=spec['role'] for i in raw.get('items',[])):raise ValueError('typed_review_role_mismatch')
+        elif not isinstance(raw,str):raise ValueError('scalar_review_requires_literal_string')
         self.engine.documents.human_correct(jid,correction['field_key'],correction['raw_value'],
              correction['evidence_ids'],actor='authenticated_reviewer',
              expected_revision=correction['expected_revision'],authorized=True,

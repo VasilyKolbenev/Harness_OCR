@@ -1,0 +1,34 @@
+Original official technical XML schema: unified MChD format 003 / EMCHD_1.
+
+Publisher: Ministry of Digital Development, Communications and Mass Media of
+the Russian Federation, on the Gosuslugi partners portal. FNS references this
+publication for the unified MChD format.
+
+Publication: https://partners.gosuslugi.ru/catalog/attorney
+Original download:
+https://gu-st.ru/content/partners/ON_EMCHD_1_928_00_01_01_01.zip
+Public publication metadata:
+https://www.gosuslugi.ru/api/cms/v2/partners/products/attorney
+
+The XSD is retained byte-for-byte, including its original annotations, as the
+published official normative technical format necessary for interoperability.
+Inclusion relies on its status as an official government normative format
+document. Official government documents of administrative character are excluded
+from copyright protection by Russian Civil Code Article 1259(6)(1). Official
+Rospatent reference for this basis:
+https://rospatent.gov.ru/ru/documents/grazhdanskiy-kodeks-rossiyskoy-federacii-chast-chetvertaya/download
+The portal and archive do not state a separate software license for this XSD.
+No MIT/Apache or other project software license is asserted over this asset.
+This notice describes the normative-document basis for including this specific
+schema; it does not grant rights to unrelated government portal content.
+
+No reference DOCX/PDF, portal implementation, real power of attorney, personal
+document, signature or signing key is included in this package. The normative
+format DOCX is linked in the registry for independent mapping review. Its
+download, along with provenance evidence, remains in ignored local validation.
+
+Hashes, original archive URL, publication metadata, registered variant and
+dependency inventory: mchd-schema-registry.json.
+
+XSD conformance establishes XML structure only. This adapter does not verify
+signatures, signer trust, revocation, current validity or service authorization.

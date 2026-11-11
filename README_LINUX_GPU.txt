@@ -1,5 +1,5 @@
 Харнесс OCR / Harness OCR — передача на Linux + NVIDIA GPU
-Версия исходников: 0.1.0rc2
+Версия исходников: 0.1.0rc3
 
 СТАТУС
 
@@ -208,7 +208,7 @@ CLI bench хранит сырые наблюдения и метрики пол�
 
 После успешного build и запуска на целевой машине сохраните:
 
-  docker image inspect harness-ocr:0.1.0rc2 --format '{{.Id}}'
+  docker image inspect harness-ocr:0.1.0rc3 --format '{{.Id}}'
   docker buildx imagetools inspect python:3.12.16-slim-bookworm@sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4
   docker compose run --rm --no-deps --entrypoint cat ocr /opt/harness-build.freeze.txt
 
@@ -243,8 +243,29 @@ GITHUB CI
 .github/workflows/ci.yml запускает software-contracts на Ubuntu/Python3.12 при
 push/PR: установка .[inference,mcp], pip check, unittest, проверка source ZIP.
 Он не скачивает веса и не требует GPU. Реальный build CUDA Docker image
-автоматически запускается после успешных software-contracts при push в main;
+автоматически запускается после успешных software-contracts для PR и push в main;
 также доступен ручной запуск с docker_build=true. Отдельный job собирает Dockerfile
 и выполняет offline imports внутри образа, но не подменяет GPU doctor, генерацию
 моделей или независимую оценку качества. Точные SHA официальных Actions получены
 из GitHub API и сохранены в deployment/actions-lock.json.
+
+СЛЕПОЕ ВИЗУАЛЬНОЕ ЧТЕНИЕ И МЧД В RC3
+
+Compose включает HARNESS_VISUAL_VERIFIER=1. После ограниченных перечитываний Qwen
+читает до двух исходных ROI без предлагаемого значения; сервер сравнивает полное
+чтение дословно. Неполный охват, расхождение или abstain оставляют review.
+Детерминированный A0 и остальные A1/A3/A4 явно не включают vision: его проверяют
+отдельно. Перед запуском диагностики остановите API:
+
+  docker compose stop ocr
+  docker compose run --rm --no-deps --entrypoint python ocr \
+    /app/scripts/visual_acceptance.py --models /models \
+    --output /reports/visual-target-001 --seconds 600
+  docker compose up -d
+
+Это синтетическая функциональная проверка обоих Qwen, не оценка точности реальных
+документов. Полные условия и поля отчёта: docs/visual-verifier.md.
+МЧД003/EMCHD_1 обрабатывается native-адаптером без OCR/Qwen, только в описанной
+области обычной ненотариальной доверенности: docs/mchd_native.md.
+Подпись, отзыв и юридические полномочия остаются not_verified. Составные поля,
+банковские ключи и неизвестные версии описаны в docs/typed-field-contracts.md.

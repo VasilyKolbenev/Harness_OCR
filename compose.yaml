@@ -1,7 +1,7 @@
 name: harness-ocr
 services:
   ocr:
-    image: harness-ocr:0.1.0rc2
+    image: harness-ocr:0.1.0rc3
     build:
       context: .
       args:
@@ -20,6 +20,7 @@ services:
       HARNESS_DEVICE: cuda
       HARNESS_DTYPE: bfloat16
       HARNESS_QWEN: ${HARNESS_QWEN:-qwen-0.8b}
+      HARNESS_VISUAL_VERIFIER: ${HARNESS_VISUAL_VERIFIER:-1}
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
       HF_HUB_DISABLE_TELEMETRY: "1"

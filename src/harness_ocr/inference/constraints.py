@@ -46,6 +46,18 @@ def _string_enum(values):
 
 def build_response_schema(prompt,purpose='selector'):
     if purpose=='verifier':return _obj({'verdict':_string_enum(['correct','incorrect','abstain'])})
+    if purpose=='visual_read':
+        try:material=_load(prompt)
+        except (ValueError,TypeError) as exc:raise ConstraintError('visual_requires_server_json_prompt') from exc
+        if not isinstance(material,dict) or set(material)!={'task','region_ids'}:
+            raise ConstraintError('visual_prompt_requires_closed_allowlist')
+        regions=material['region_ids']
+        if (not isinstance(regions,list) or not 1<=len(regions)<=4
+            or any(not isinstance(r,str) for r in regions) or len(set(regions))!=len(regions)):
+            raise ConstraintError('visual_region_allowlist_budget')
+        readings={_identifier(rid):_obj({'status':_string_enum(['readable','unreadable','ambiguous']),
+                    'literal':{'type':'string','maxLength':2048}}) for rid in regions}
+        return _obj({'readings':_obj(readings)})
     if purpose!='selector':raise ConstraintError('unsupported_constraint_purpose')
     try:material=_load(prompt)
     except (ValueError,TypeError) as exc:raise ConstraintError('selector_requires_server_json_prompt') from exc
@@ -99,7 +111,8 @@ def _valid(value,schema):
         if not isinstance(value,list) or not schema['minItems']<=len(value)<=schema['maxItems']:return False
         if schema.get('uniqueItems') and len({json.dumps(v,sort_keys=True) for v in value})!=len(value):return False
         return all(_valid(v,schema['items']) for v in value)
-    if schema.get('type')=='string':return isinstance(value,str) and ('enum' not in schema or value in schema['enum'])
+    if schema.get('type')=='string':return (isinstance(value,str) and ('enum' not in schema or value in schema['enum'])
+            and len(value)<=schema.get('maxLength',len(value)))
     return False
 
 class _StrictJsonParser(CharacterLevelParser):
@@ -121,6 +134,12 @@ class _StrictJsonParser(CharacterLevelParser):
         if not self.inner.can_end():return False
         try:return _valid(_load(self.prefix),self.schema)
         except (ValueError,TypeError):return False
+    def shortcut_key(self):
+        # Preserve the library's bounded JSON-string token cache. Hiding this
+        # hint forces a full traversal of Qwen's 248k-token trie for every free
+        # optical character. This hint only applies *inside* a free string;
+        # empty-array guards and our complete-object/EOS validation still run.
+        return self.inner.shortcut_key()
     @property
     def config(self):return self.inner.config
     @config.setter

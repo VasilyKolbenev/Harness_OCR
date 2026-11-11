@@ -39,7 +39,8 @@ def _quad(quad: Any, size: Any) -> None:
         raise EvidenceError("degenerate_quad")
 
 
-def normalize_observation(value: dict, allowed_sources: set[str], *, mode: str = "production") -> dict:
+def normalize_observation(value: dict, allowed_sources: set[str], *, mode: str = "production", native_source=None,
+                          native_verified_registry=None) -> dict:
     if not isinstance(value, dict):
         raise EvidenceError("observation_must_be_object")
     obs = clone(value)
@@ -74,6 +75,12 @@ def normalize_observation(value: dict, allowed_sources: set[str], *, mode: str =
         if kind == "native_pdf_text" and obs.get("text_layer_checks") is not True:
             raise EvidenceError("native_pdf_text_layer_not_verified")
     elif kind == "structured_xml":
+        if obs.get("native_adapter") is not None or obs.get("native_proof") is not None:
+            from ..native.mchd import verify_native_observation
+            replayed=(native_verified_registry.get(obs['id'])==obs if native_verified_registry is not None
+                      else native_source is not None and verify_native_observation(obs,native_source))
+            if not replayed:
+                raise EvidenceError("native_xml_proof_not_replayed_from_source")
         if any(obs.get(k) is not None for k in ("bbox", "quad", "page")):
             raise EvidenceError("xml_must_not_have_invented_page_coordinates")
         if not isinstance(obs.get("xpath") or obs.get("field_path"), str):

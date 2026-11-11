@@ -21,6 +21,54 @@
       "id": "LOCAL-PROFILES",
       "path": "src/harness_ocr/profiles/data/first10_profiles.json",
       "supports": "The actual technical extraction contract and field roles. It is not a legal list of documents required by a service."
+    },
+    {
+      "id": "enp-mod10",
+      "url": "https://rostov-tfoms.ru/services/zasedaniya-rabochih-grupp/erp/enp-struct",
+      "local_snapshot": "validation/typed-sources/enp-mod10.html",
+      "sha256": "cfe913751c2a212be3db9df74819d24ae1a91aae24a434abd636a9b83e45f83e",
+      "reference_revision": "Undated territorial state OMS fund ENP Mod10 instructions; snapshot 2026-11-11",
+      "retrieved_date": "2026-11-11",
+      "supports": "Explicit ENP label: 16 ASCII digits and exact ISO/HL7 Mod10 arithmetic as described by the territorial state OMS fund. Old policy/blank identifiers are not coerced to ENP."
+    },
+    {
+      "id": "cbr-treasury-exception",
+      "url": "https://www.cbr.ru/explan/eks/",
+      "local_snapshot": "validation/typed-sources/cbr-treasury-exception.html",
+      "sha256": "a3351c59976d0e80211087be3a203d595382b6fd3b1c7691f45a0863a67b8261",
+      "reference_revision": "CBR official EKS clarification; snapshot 2026-11-11",
+      "retrieved_date": "2026-11-11",
+      "supports": "Explicit treasury account is not a bank account and must not receive the bank-account checksum. No ownership/authenticity verification."
+    },
+    {
+      "id": "gost-vin-card",
+      "url": "https://protect.gost.ru/gost/details/2750cc93-1cfb-432b-aaa1-8b4ff860a9e9",
+      "local_snapshot": "validation/typed-sources/gost-vin-card.html",
+      "sha256": "5db3d9337c13fd0c4cef232eca286138de7a370be4066f1486d1f64d5167aefc",
+      "reference_revision": "GOST 33990-2016 official catalogue card; introduced 2018-02-01; catalogue scope only",
+      "retrieved_date": "2026-11-11",
+      "supports": "Official standard catalogue identity, revision and vehicle scope only. The card does not qualify arbitrary PSM/PIN/manufacturer formats; VIN regex is a server lexical contract only."
+    },
+    {
+      "id": "fns-ogrnip",
+      "url": "https://www.nalog.gov.ru/rn38/news/activities_fts/15180419/",
+      "local_snapshot": "validation/typed-sources/fns-ogrnip.html",
+      "sha256": "4d784e889f38a2985d0408fd2919b25eaf3b748d4371bdc065d0499807d53d92",
+      "reference_revision": "FNS official OGRNIP structure publication; snapshot 2026-11-11",
+      "retrieved_date": "2026-11-11",
+      "supports": "Explicit OGRNIP label and official structure; arithmetic has no document authenticity or registry-status meaning."
     }
-  ]
+  ],
+  "typed_source_manifest": {
+    "path": "validation/typed-sources/manifest.json",
+    "sha256": "08267b56d3cc2fb2853ef94660035fb3552af7e1e5271a0f4777bea68b3c0fbe"
+  },
+  "typed_contract_limits": {
+    "bank_checksum_primary_source_qualified": false,
+    "bank_checksum_runtime_status": "not_checked even for matching diagnostic arithmetic; no verified full primary coefficient publication pinned",
+    "manufacturer_pin_factory_format_qualified": false,
+    "production_qualified": false,
+    "unknown_document_edition_status": "not_checked",
+    "source_snapshots_are_not_accuracy_evidence": true
+  }
 }

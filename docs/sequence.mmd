@@ -4,8 +4,7 @@ sequenceDiagram
     participant Jobs as Очередь SQLite
     participant Owner as Общий владелец устройства
     participant State as Состояние документа
-    participant OCR as DB/CTC и Xiaomi
-    participant Qwen as Qwen selector
+    participant Worker as Изолированный воркер
     participant Gate as Проверки и политика
     Client->>API: Загрузить файл
     API-->>Client: artifact_id и SHA
@@ -14,28 +13,56 @@ sequenceDiagram
     API-->>Client: job_id
     Jobs->>Owner: Проверка весов и атомарный захват задания
     Owner->>Owner: Допуск устройства и lease воркера
-    Owner->>OCR: Изолированное декодирование и чтение
-    OCR->>State: Наблюдения и координаты источников
-    Owner->>State: Кандидаты, роли, зависимости, конфликты
-    Owner->>Qwen: Граф, кандидаты, стратегии, бюджет
-    Qwen-->>Owner: IDs кандидатов и запросы областей
-    Owner->>Gate: Проверить происхождение и роли
-    opt Есть разрешённый бюджет перечитывания
-        Owner->>OCR: Прочитать разрешённые области
-        OCR->>State: Добавить новые наблюдения
-        Owner->>Qwen: Обновлённый граф
-        Qwen-->>Owner: Проверяемый выбор
+    Owner->>Worker: ingest с серверным profile_id и deadline
+    alt Зарегистрированная МЧД D04
+        Worker->>Worker: Оригинальный pinned XSD и точный mapper
+        Worker-->>Owner: Наблюдения, claims, все стороны и ограничения
+        Owner->>Owner: Replay полного результата по исходному артефакту
+        Owner->>State: Атомарно native-сводка и проверенные наблюдения
+        Owner->>State: Native claims следующей ревизией
+        Note over Owner,State: Без OCR и Qwen; подпись, отзыв и полномочия not_verified
+    else Generic XML или неподдерживаемая native-версия
+        Worker-->>Owner: Диагностика или явная ошибка адаптера
+        Note over Owner,Gate: failed без наследования квалификации
+    else Растровый документ
+        Worker->>Worker: DB/CTC и Xiaomi по страницам
+        Worker-->>Owner: Наблюдения, геометрия и crop proofs
+        Owner->>State: Неизменяемые наблюдения
+        Owner->>Gate: Буквальные и вложенные typed-кандидаты, роли и версии
+        Gate-->>Owner: Проверяемые ID и конфликты
+        Owner->>Worker: Qwen selector, allowlists, стратегии и бюджет
+        Worker-->>Owner: Только ID кандидатов и запросы ROI
+        Owner->>State: Проверенные утверждения и конфликты
+        opt Есть разрешённый бюджет перечитывания
+            Owner->>Worker: Xiaomi по разрешённым ROI
+            Worker-->>Owner: Новые наблюдения
+            Owner->>State: Сохранить новую ревизию
+            Owner->>Worker: Selector по обновлённым кандидатам
+            Worker-->>Owner: Проверяемые ID
+        end
+        opt Включено слепое визуальное чтение
+            Note over Owner,Worker: Compose включён; Settings выключен; бюджет 2 уникальные ROI
+            Owner->>Owner: Все evidence IDs; дедупликация дескрипторов ROI по SHA
+            Owner->>Worker: Только имя модели и серверные ROI
+            Worker->>Worker: Проверить исходник, растр и фактические пиксели crop
+            Worker->>Worker: Новый VLM capture без кандидата и gold
+            Worker-->>Owner: Оптический литерал и provenance
+            Owner->>State: Один capture на ROI; отдельное сравнение каждого полного чтения
+            Note over Owner,State: Повтор capture не создаёт независимых свидетельств
+            Note over State,Gate: Расхождение, воздержание или неполный охват дают review
+        end
     end
+    Owner->>Gate: Активные evidence, typed-полнота, роли, лимиты и применимость
     Owner->>Jobs: Атомарное completed/failed/canceled/budget_exhausted
     Client->>API: Получить результат
     API->>Gate: Актуальная политика, binding и терминальное состояние
-    Gate->>State: Ревизия, конфликты, применимость, доказательства
+    Gate->>State: Ревизия, конфликты, native-сводка, применимость и доказательства
     Gate-->>API: Поля и решение review/accept_for_autofill
     API->>API: Аудит опубликованного результата
     API-->>Client: contract_result и evidence
     opt Авторизованная правка оператора
         Client->>API: Правка с expected_revision и отдельным токеном
-        API->>State: Атомарная человеческая ревизия
+        API->>State: Typed-evidence и человеческая CAS-ревизия
         API->>Gate: Отдельная граница человеческого принятия
         API-->>Client: Новая ревизия и review
     end

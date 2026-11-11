@@ -6,7 +6,7 @@ import hmac
 from typing import Literal
 from fastapi import FastAPI,Depends,Header,HTTPException,Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel,ConfigDict,Field,StrictBool
+from pydantic import BaseModel,ConfigDict,Field,StrictBool,field_validator
 from .settings import Settings
 from . import __version__
 from .service import Service
@@ -23,9 +23,20 @@ class JobRequest(BaseModel):
 class Correction(BaseModel):
     model_config=ConfigDict(extra='forbid')
     field_key:str=Field(min_length=1,max_length=128)
-    raw_value:str=Field(min_length=1,max_length=10000)
+    raw_value:str|dict
     evidence_ids:list[str]=Field(min_length=1,max_length=100)
-    expected_revision:int=Field(ge=0)
+    expected_revision:int=Field(ge=0,strict=True)
+
+    @field_validator('raw_value')
+    @classmethod
+    def bounded_literal(cls,value):
+        import json
+        if not value or len(json.dumps(value,ensure_ascii=False))>250000:raise ValueError('invalid_raw_value_size')
+        if isinstance(value,str) and len(value)>10000:raise ValueError('literal_length_limit')
+        if isinstance(value,dict):
+            from .typed_fields import _structure
+            if not _structure(value):raise ValueError('invalid_typed_value_contract')
+        return value
 
 class AuditOutcome(BaseModel):
     model_config=ConfigDict(extra='forbid')

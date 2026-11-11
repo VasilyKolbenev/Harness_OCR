@@ -6,10 +6,11 @@
 |---|---|---|
 | `python -m unittest discover -s tests -v` | Контракты ядра, схемы, HTTP/MCP, права, очереди, остановка и OS leases, research/control runner | Качество нейромоделей и GPU-инференс |
 | Actions `software-contracts` | Те же тесты на чистом Ubuntu/Python 3.12; сборка исходного ZIP | CUDA image/GPU/точность |
-| Actions `cuda-image-build`, push в `main` или ручной `docker_build=true` | Реальная сборка Dockerfile и offline-импорты torch, torchvision, Qwen3.5, API/MCP внутри образа | Наличие GPU и генерация моделей |
+| Actions `cuda-image-build`, PR, push в `main` или ручной `docker_build=true` | Реальная сборка Dockerfile и offline-импорты torch, torchvision, Qwen3.5, API/MCP внутри образа | Наличие GPU и генерация моделей |
 | `scripts/doctor.py` | Драйвер, настоящий BF16 kernel, версии, SHA весов, live readiness | Распознавание страниц и прикладные метрики |
 | `scripts/acceptance.py` | Настоящий API job, result/trace, отмена, полномочия и CAS правок | Независимое качество извлечения |
 | `scripts/gpu_acceptance.py` | Последовательные A0/A1/A3/A4, совпадение наблюдений и полнота генераций | Production qualification: она остаётся `false` |
+| `scripts/visual_acceptance.py` | Последовательный реальный Qwen vision 0.8B/4B, SHA пикселей, EOS, дословное сравнение на одном capture | Точность на реальных документах и независимость двух Qwen-проверок |
 | Независимый корпус и F08 qualification | Ошибки/отказы по полям и исходникам, политика принятия | Поддержка других макетов/версий вне измеренного scope |
 
 Точные команды находятся в [README_LINUX_GPU.txt](../README_LINUX_GPU.txt). CI выполняется после публикации коммита в GitHub; наличие YAML само по себе не означает успешное выполнение CI.

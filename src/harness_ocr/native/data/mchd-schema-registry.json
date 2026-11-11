@@ -1,0 +1,42 @@
+{
+  "manifest_version": "mchd-schema-registry/1",
+  "adapter_id": "fns-emchd-003-v1",
+  "format": "Unified MChD 003",
+  "schema_version": "EMCHD_1",
+  "namespace": "urn://x-artefacts/EMCHD_1",
+  "root_element": "Доверенность",
+  "version_attribute": "ВерсФорм",
+  "registered_variant": "ordinary non-notarial B2B, ПрЭлФорм=00000000, ВидДовер=1, Документ/Довер",
+  "official_landing_url": "https://partners.gosuslugi.ru/catalog/attorney",
+  "official_publication_metadata_url": "https://www.gosuslugi.ru/api/cms/v2/partners/products/attorney",
+  "fns_reference_url": "https://www.nalog.gov.ru/rn77/related_activities/el_doc/use_electronic_sign/",
+  "original_archive_url": "https://gu-st.ru/content/partners/ON_EMCHD_1_928_00_01_01_01.zip",
+  "original_archive_sha256": "c50dc8aa420954bf22ebaae99a5f3ebaddbb31867f94e68ec4ffd484e8e9b150",
+  "retrieved_utc": "2026-11-11",
+  "assets": [
+    {
+      "filename": "ON_EMCHD_1_928_00_01_01_01.xsd",
+      "sha256": "c8b9a4547074ae9d2c43ad24c81bd1ff7fe82afa419d3f7de951ec9d702c8780",
+      "bytes": 91252,
+      "modified": false,
+      "dependencies": []
+    }
+  ],
+  "normative_mapping_reference": {
+    "official_url": "https://gu-st.ru/content/partners/ON_DOVBB.docx",
+    "sha256": "a933249fe3fe154efe39e02850249176f15706124e532077a7f26ce55b029fe7",
+    "packaged": false,
+    "tables": [
+      "4.4",
+      "4.5",
+      "4.19",
+      "4.20",
+      "4.21",
+      "4.22",
+      "4.23",
+      "4.24"
+    ]
+  },
+  "distribution_notice": "Official normative technical format; see NOTICE.txt. No project license is asserted over the original government schema.",
+  "trust_scope": "XSD structure only; signature, signer trust, revocation, current validity and service authorization are not verified"
+}

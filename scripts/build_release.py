@@ -14,7 +14,7 @@ import re
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-ROOT_NAMES = {"Dockerfile", "compose.yaml", "pyproject.toml", ".dockerignore", ".gitignore", "LICENSE.txt", "THIRD_PARTY_NOTICES.txt"}
+ROOT_NAMES = {"Dockerfile", "compose.yaml", "pyproject.toml", ".dockerignore", ".gitignore", ".gitattributes", "LICENSE.txt", "THIRD_PARTY_NOTICES.txt"}
 EXCLUDED = {"__pycache__", ".git", ".venv", "models", "var", "reports", "outputs", "dist"}
 SECRET = re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|hf_[A-Za-z0-9]{24,}")
 
@@ -28,6 +28,8 @@ def allowed(path):
                 path.name.startswith("requirements-") and path.suffix == ".txt" or
                 path.name.startswith("README") and path.suffix in {".txt", ".md"})
     if parts[0] == "src":
+        if parts[:4] == ('src','harness_ocr','native','data'):
+            return path.suffix in {'.json','.xsd','.txt'}
         return path.suffix in {".py", ".json"} or path.name == "README.txt"
     if parts[0] == "deployment":
         return path.name in {"base-image-lock.json","actions-lock.json"}

@@ -6,14 +6,16 @@ from .engine import Engine
 from .inference.supervisor import Supervisor
 from .models import verify_models,model_lock
 from .util import digest,file_sha,write_json,utc
+from .typed_fields import value_identity,_structure
 
 def score(result,gold):
     rows=[]
     for key,expected in gold.items():
         f=result['fields'].get(key,{});raw=f.get('raw_value')
         observed=f.get('extraction_status')=='observed' and raw is not None
-        rows.append({'field_key':key,'correct_literal':observed and raw==expected,
-          'wrong_literal':observed and raw!=expected,'withheld':not observed,
+        same=value_identity(raw)==expected
+        rows.append({'field_key':key,'correct_literal':observed and same,
+          'wrong_literal':observed and not same,'withheld':not observed,
           'critical':f.get('critical',True),'validation_pass':f.get('validation_status')=='pass'})
     return {'fields':rows,'correct':sum(r['correct_literal'] for r in rows),
       'wrong':sum(r['wrong_literal'] for r in rows),'withheld':sum(r['withheld'] for r in rows),
@@ -21,6 +23,9 @@ def score(result,gold):
       'any_wrong_critical':any(r['wrong_literal'] and r['critical'] for r in rows)}
 
 def run_benchmark(manifest_path,output,settings,*,include_controller=True,backend=None):
+    # A0 is a no-Qwen rules baseline. Vision is a separate F04 paired exam,
+    # never an unrecorded extra Qwen call inherited from the service setting.
+    settings=replace(settings,visual_verifier=False)
     manifest_path=Path(manifest_path).resolve()
     manifest=json.loads(manifest_path.read_text(encoding='utf-8-sig'))
     if manifest.get('schema_version')!='harness-bench/1' or manifest.get('split') not in {'dev','blind'}:
@@ -31,9 +36,15 @@ def run_benchmark(manifest_path,output,settings,*,include_controller=True,backen
     if output.exists():raise ValueError('benchmark_output_must_be_new')
     sources=[]
     for d in documents:
-        if not isinstance(d.get('gold'),dict) or not d['gold'] or any(not isinstance(v,str) for v in d['gold'].values()):
-            raise ValueError('gold_must_be_nonempty_exact_raw_strings')
+        if not isinstance(d.get('gold'),dict) or not d['gold'] or any(
+            not (isinstance(v,str) and bool(v) or isinstance(v,dict) and v.get('schema_version')=='typed-fields-v1'
+                 and v.get('contract_version')=='1.0' and isinstance(v.get('items'),list) and bool(v['items']))
+            for v in d['gold'].values()):
+            raise ValueError('gold_must_be_nonempty_exact_literals_or_typed_semantic_identities')
         p=(manifest_path.parent/d['path']).resolve()
+        with p.open('rb') as stream:magic=stream.read(128)
+        if magic.lstrip(b'\xef\xbb\xbf \t\r\n').startswith(b'<') or magic.startswith((b'\xff\xfe',b'\xfe\xff')):
+            raise ValueError('native_xml_is_not_a_paired_optical_benchmark_input')
         sources.append({'id':d['id'],'original_id':d['original_id'],'path':str(p),'sha256':file_sha(p)})
     verification=verify_models(settings.models_dir,['detector','cyrillic','xiaomi','qwen-0.8b','qwen-4b']) if backend is None else {'ok':True,'fixture':True}
     if not verification['ok']:raise ValueError('benchmark_models_not_verified:'+str(verification['errors']))
@@ -46,6 +57,7 @@ def run_benchmark(manifest_path,output,settings,*,include_controller=True,backen
       'models':model_lock(),'device':settings.device,'dtype':settings.dtype,
       'max_input_tokens':settings.max_input_tokens,'max_new_tokens':settings.max_new_tokens,
       'max_rereads':settings.max_rereads,'document_timeout_seconds':settings.document_timeout_seconds,
+      'visual_verifier':False,'visual_evaluation':'separate blinded F04 exam; not part of A0/A1/A3/A4',
       'metric':'exact raw literal; no normalization or reference correction',
       'group_unit':'original_id','quality_qualified':False,'fixture':backend is not None}
     protocol['protocol_sha256']=digest(protocol);write_json(output/'protocol.json',protocol)

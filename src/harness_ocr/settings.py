@@ -26,6 +26,8 @@ class Settings:
     allow_fixture: bool = False
     cpu_threads: int = 4
     runtime_lock_dir: Path | None = None
+    visual_verifier: bool = False
+    max_visual_regions: int = 2
 
     @property
     def model_lock_dir(self):
@@ -38,12 +40,14 @@ class Settings:
 
     @classmethod
     def from_env(cls):
+        if os.getenv('HARNESS_VISUAL_VERIFIER','0') not in {'0','1'}:raise ValueError('invalid_visual_verifier_environment')
         return cls(Path(os.getenv('HARNESS_DATA', './var')).resolve(),
                    Path(os.getenv('HARNESS_MODELS', './models')).resolve(),
                    device=os.getenv('HARNESS_DEVICE','cuda'),
                    dtype=os.getenv('HARNESS_DTYPE','bfloat16'),
                    qwen=os.getenv('HARNESS_QWEN','qwen-0.8b'),
                    cpu_threads=int(os.getenv('HARNESS_CPU_THREADS','4')),
+                   visual_verifier=os.getenv('HARNESS_VISUAL_VERIFIER','0')=='1',
                    runtime_lock_dir=Path(os.environ['HARNESS_LOCK_DIR']).resolve() if os.getenv('HARNESS_LOCK_DIR') else None)
 
     def validate(self):
@@ -58,4 +62,6 @@ class Settings:
                for v in (self.call_timeout_seconds,self.document_timeout_seconds)):
             raise ValueError('invalid_timeout')
         if type(self.cpu_threads) is not int or not 1<=self.cpu_threads<=16:raise ValueError('invalid_cpu_thread_budget')
+        if type(self.visual_verifier) is not bool:raise ValueError('invalid_visual_verifier_flag')
+        if type(self.max_visual_regions) is not int or not 1<=self.max_visual_regions<=4:raise ValueError('invalid_visual_region_budget')
         if self.runtime_lock_dir is not None and not isinstance(self.runtime_lock_dir,Path):raise ValueError('invalid_runtime_lock_directory')
