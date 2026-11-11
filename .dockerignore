@@ -2,6 +2,10 @@
 !Dockerfile
 !pyproject.toml
 !requirements-*.txt
+!LICENSE.txt
+!THIRD_PARTY_NOTICES.txt
+!LICENSES/
+!LICENSES/**
 !src/
 !src/**
 !scripts/

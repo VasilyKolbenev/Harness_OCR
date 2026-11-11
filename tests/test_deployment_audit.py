@@ -9,6 +9,8 @@ import tempfile
 import threading
 import time
 import unittest
+import fnmatch
+import shlex
 from unittest.mock import patch
 
 from harness_ocr.settings import Settings
@@ -117,5 +119,34 @@ class HealthProbeTests(unittest.TestCase):
             self.assertFalse(healthcheck.check_ready());request.assert_not_called()
         with patch.object(healthcheck.urllib.request,'urlopen',side_effect=OSError('unreachable')):
             self.assertFalse(healthcheck.check_ready(token='controlled-token'))
+
+class DockerContextTests(unittest.TestCase):
+    def test_literal_copy_sources_are_present_in_allowlisted_build_context(self):
+        # Evaluate this project's simple ordered allow/deny patterns. Actual
+        # Docker build remains the authoritative check, not this static guard.
+        patterns=(ROOT/'.dockerignore').read_text().splitlines()
+        def included(relative):
+            value=relative.as_posix().rstrip('/');keep=True
+            for raw in patterns:
+                rule=raw.strip()
+                if not rule or rule.startswith('#'):continue
+                negative=rule.startswith('!');pattern=rule[1:] if negative else rule
+                pattern=pattern.rstrip('/')
+                if fnmatch.fnmatchcase(value,pattern):keep=negative
+            return keep
+        copied=[]
+        for line in (ROOT/'Dockerfile').read_text().splitlines():
+            if not line.startswith('COPY '):continue
+            for value in shlex.split(line)[1:-1]:
+                if value.startswith('--'):continue
+                self.assertNotIn('$',value,'Update static COPY guard for variable source')
+                relative=Path(value.rstrip('/'));source=ROOT/relative
+                self.assertTrue(source.exists(),value)
+                self.assertTrue(included(relative),f'{value} excluded by .dockerignore')
+                copied.append(relative)
+        self.assertIn(Path('LICENSE.txt'),copied)
+        self.assertIn(Path('THIRD_PARTY_NOTICES.txt'),copied)
+        self.assertIn(Path('LICENSES'),copied)
+        self.assertTrue(included(Path('LICENSES/Apache-2.0.txt')))
 
 if __name__=='__main__':unittest.main()
