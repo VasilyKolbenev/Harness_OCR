@@ -141,13 +141,18 @@ docker run --rm --gpus all --network none --pid=host \
   -e HARNESS_VISUAL_VERIFIER=1 harness-ocr:yolo26 \
   python -m experiments.yolo26.run --data /data/yolo26-pilot-v2 \
   --output /reports/yolo26-gpu-e2e --models /models --stage e2e --device cuda \
-  --qwen qwen-0.8b --total-seconds 7200
+  --qwen qwen-0.8b --max-input-tokens 32768 --attention-backend sdpa \
+  --call-timeout 600 --document-timeout 1800 --total-seconds 7200
 ```
 
 Визуальный verifier в этом примере включён одинаково для всех вариантов.
 Настройка фиксируется в протоколе. Сравнение с CPU-прогоном с иным verifier
 не является чистым измерением влияния устройства. После основного сравнения
 Qwen 4B можно проверить отдельным заранее зафиксированным прогоном.
+Контекст, attention backend и временные бюджеты здесь совпадают с CPU v2 для
+сопоставления качества; dtype CUDA остаётся BF16 и отдельно фиксируется.
+Задержка берётся из фактических wall-измерений. Эти исследовательские лимиты
+не являются критерием эксплуатационного SLA или обещанием времени ответа.
 
 `--pid=host` здесь относится только к отдельному измерительному контейнеру:
 NVML возвращает PID хоста, и совпадение пространств PID позволяет привязать
