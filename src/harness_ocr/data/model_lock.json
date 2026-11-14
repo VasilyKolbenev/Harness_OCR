@@ -204,6 +204,34 @@
         }
       ]
     },
+    "yolo26l-text": {
+      "source": "github-release",
+      "repo": "ultralytics/assets",
+      "revision": "v8.4.0",
+      "license": "AGPL-3.0",
+      "experimental": true,
+      "release_asset_id": 730438472,
+      "files": [{
+        "file": "yolo26l-text.pt",
+        "sha256": "b94c9e189c79135c260c72855868d84c517561dec36b3a955bfde55bcce52563",
+        "bytes": 56459493,
+        "download_url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26l-text.pt"
+      }]
+    },
+    "yolo26x-text": {
+      "source": "github-release",
+      "repo": "ultralytics/assets",
+      "revision": "v8.4.0",
+      "license": "AGPL-3.0",
+      "experimental": true,
+      "release_asset_id": 730445523,
+      "files": [{
+        "file": "yolo26x-text.pt",
+        "sha256": "0188cafce4a221539a18232970fce8d668155d7458bd3fc3400c36c2f607d6c6",
+        "bytes": 126034661,
+        "download_url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26x-text.pt"
+      }]
+    },
     "cyrillic": {
       "repo": "PaddlePaddle/cyrillic_PP-OCRv5_mobile_rec_onnx",
       "revision": "2cef88145434beb8afa9dd82d77d799eb1ad7b29",

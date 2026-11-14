@@ -12,6 +12,7 @@ dependencies = ["fastapi==0.162.4", "uvicorn==0.54.0", "httpx==0.28.1", "pydanti
 [project.optional-dependencies]
 inference = ["transformers==5.2.0", "numpy==2.4.6", "safetensors==0.8.0", "onnxruntime==1.31.1", "opencv-python-headless==5.0.0.93", "pyclipper==1.4.0", "lm-format-enforcer==0.11.3"]
 mcp = ["mcp==2.3.0"]
+yolo = ["ultralytics-opencv-headless==8.4.211", "polars==2.1.0", "nvidia-ml-py==13.615.71", "ultralytics-thop==2.2.5", "ultralytics-platform==0.1.111", "psutil==7.2.2", "matplotlib==3.11.2", "requests==2.34.2"]
 
 [project.scripts]
 harness-ocr = "harness_ocr.cli:main"

@@ -31,7 +31,7 @@ class HFReaders:
         path=str(self.settings.models_dir/name)
         dtype=getattr(self.torch,self.settings.dtype)
         model=AutoModelForImageTextToText.from_pretrained(path,local_files_only=True,
-              trust_remote_code=False,torch_dtype=dtype,attn_implementation='eager',low_cpu_mem_usage=True)
+              trust_remote_code=False,torch_dtype=dtype,attn_implementation=self.settings.attention_backend,low_cpu_mem_usage=True)
         self.models[name]=model.eval().to(self.settings.device)
         if name=='xiaomi':
             self.processors[name]=AutoProcessor.from_pretrained(path,local_files_only=True,
@@ -107,11 +107,15 @@ class HFReaders:
                      'Abstain when the available observations cannot decide. Never invent evidence.'}
         if purpose not in instructions:raise ValueError('unsupported_qwen_purpose')
         self.load(name); tok=self.tokenizers[name]
-        if self.constraint_cache is None:self.constraint_cache=TokenizerDataCache(max_entries=2)
-        constraint=build_prefix_constraint(tok,prompt,purpose=purpose,cache=self.constraint_cache)
         rendered=tok.apply_chat_template([{'role':'system','content':instructions[purpose]},
             {'role':'user','content':prompt}],tokenize=False,add_generation_prompt=True,enable_thinking=False)
         inputs=tok(rendered,return_tensors='pt')
+        # Reject the full chat-template token count before building the costly
+        # vocabulary trie/JSON constraint. generate() also checks this limit.
+        if int(inputs['input_ids'].shape[-1])>self.settings.max_input_tokens:
+            raise ValueError('templated_input_token_limit')
+        if self.constraint_cache is None:self.constraint_cache=TokenizerDataCache(max_entries=2)
+        constraint=build_prefix_constraint(tok,prompt,purpose=purpose,cache=self.constraint_cache)
         out=self.generate(name,inputs,max_new_tokens or self.settings.max_new_tokens,prefix_constraint=constraint)
         out.update(response_schema_sha256=constraint.response_schema_sha256,
                    constraint_engine=constraint.constraint_engine,

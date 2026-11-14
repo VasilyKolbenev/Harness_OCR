@@ -42,14 +42,23 @@ def _worker(conn,settings):
                     if args.get('warmup'):
                         from .hf import HFReaders
                         hf=HFReaders(settings);hf.load('xiaomi');hf.load(settings.qwen)
-                        value['loaded_models']=['xiaomi',settings.qwen]
+                        if cheap is None:
+                            from .cheap import CheapReader
+                            cheap=CheapReader(settings.models_dir,threads=settings.cpu_threads,
+                                text_detector=settings.text_detector,device=settings.device)
+                        cheap.load()
+                        value['loaded_models']=['xiaomi',settings.qwen,
+                            'detector' if settings.text_detector=='db' else settings.text_detector+'-text','cyrillic']
+                        value['text_detector']=settings.text_detector
+                        value['text_detector_device']='cpu' if settings.text_detector=='db' else settings.device
                 elif op=='ingest':
                     from ..ingest import decode
                     value=decode(args['path'],args['output'],settings,profile_id=args.get('profile_id'))
                 elif op=='cheap':
                     if cheap is None:
                         from .cheap import CheapReader
-                        cheap=CheapReader(settings.models_dir,threads=settings.cpu_threads)
+                        cheap=CheapReader(settings.models_dir,threads=settings.cpu_threads,
+                            text_detector=settings.text_detector,device=settings.device)
                     value=cheap.read(**args)
                 else:
                     if hf is None:

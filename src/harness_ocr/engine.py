@@ -5,6 +5,7 @@ import json
 import os
 import platform
 from importlib import metadata
+from dataclasses import asdict
 from . import __version__
 from .core import DocumentStore
 from .core.trace import TraceRecorder
@@ -33,7 +34,7 @@ class Engine:
         self.code_sha256=digest({p.relative_to(package_root).as_posix():file_sha(p)
             for p in sorted(package_root.rglob('*.py'))})
         self.dependency_versions={}
-        for name in ('torch','transformers','tokenizers','onnxruntime','numpy','Pillow','pypdfium2','defusedxml','lxml','lm-format-enforcer'):
+        for name in ('torch','torchvision','transformers','tokenizers','onnxruntime','numpy','Pillow','pypdfium2','defusedxml','lxml','lm-format-enforcer','ultralytics','ultralytics-opencv-headless'):
             try:self.dependency_versions[name]=metadata.version(name)
             except metadata.PackageNotFoundError:self.dependency_versions[name]=None
     def active_cards(self,contract):
@@ -49,18 +50,29 @@ class Engine:
         cards=self.active_cards(contract) if strategy_cards is None else strategy_cards
         limits={name:getattr(self.settings,name) for name in ('max_upload_bytes','max_pages','max_page_pixels',
             'max_input_tokens','max_new_tokens','call_timeout_seconds','document_timeout_seconds','max_rereads')}
+        text_detection={'selector':self.settings.text_detector,'max_lines':200,
+            'recognizer':'cyrillic-ctc','recognizer_device':'cpu','word_geometry_is_not_field_role':True}
+        if self.settings.text_detector=='db':
+            from .inference.db_geometry import DetectorConfig
+            text_detection.update(device='cpu',config=asdict(DetectorConfig()))
+        else:
+            from .inference.yolo_detector import YoloDetectorConfig
+            text_detection.update(device=self.settings.device,config=YoloDetectorConfig().binding(),
+                model_key=self.settings.text_detector+'-text',
+                grouping='deterministic_word_to_line_preserve_source_geometry')
         runtime={'package_version':__version__,'package_code_sha256':self.code_sha256,
             'backend_class':type(self.backend).__module__+'.'+type(self.backend).__qualname__,
             'fixture_permitted':self.settings.allow_fixture,
             'python':platform.python_version(),'machine':platform.machine(),'dependencies':self.dependency_versions,
             'limits':limits,'mode':mode,'allow_reread':allow_reread,'max_reread_rounds':2,
+            'text_detection':text_detection,
             'visual_verifier':{'enabled':self.settings.visual_verifier,'max_regions':self.settings.max_visual_regions,
                 'protocol':'blind-visual-capture-v1','comparison':'complete_original_observation_literal',
                 'max_pixels':589824,'max_side':1536,'processor_min_pixels':1024,
                 'processor_alignment':32,'processor_may_resize_to_minimum':True},
             'sampler':{'do_sample':False,'use_cache':True,'thinking':False,'logits_to_keep':1,
                        'output_format':'server-generated-json-schema','constraint_engine':'lm-format-enforcer'},
-            'attention':'eager','cpu_threads':{'ctc_intraop':self.settings.cpu_threads,'ctc_interop':1,
+            'attention':self.settings.attention_backend,'cpu_threads':{'ctc_intraop':self.settings.cpu_threads,'ctc_interop':1,
                 'hf_intraop':self.settings.cpu_threads,'hf_interop':1,
                 'environment':{k:os.getenv(k) for k in ('OMP_NUM_THREADS','MKL_NUM_THREADS','OPENBLAS_NUM_THREADS')}},
             'image_preprocess':{'max_pixels':589824,'max_side':1536,'upscale':False},
@@ -86,7 +98,7 @@ class Engine:
         observations=[];regions=[];optics_completed=True;selector_complete=True;optics=None
         strategy_reasons=[];strategy_info={'active_cards':[],'unsupported_actions':[]}
         unresolved_rereads=[]
-        visual_checks=[];visual_regions={};visual_attempted=False;native_ingestion=None
+        visual_checks=[];visual_regions={};visual_regions_by_id={};visual_attempted=False;native_ingestion=None
         def record(name,inputs,outputs,kind='pure',status='completed'):
             self.trace.record(name,inputs,outputs,{'pipeline_version':'1','contract':contract['config_sha256']},
                document_id=document_id,stage_kind=kind,deterministic=kind=='pure',status=status)
@@ -104,7 +116,9 @@ class Engine:
                           'seconds':out.get('seconds',out.get('diagnostics',{}).get('seconds')),
                           'wall_seconds':time.perf_counter()-wall_start,
                           'timing_scope':'wall includes process/load/preprocess; HF seconds is generate only',
-                          'generated_tokens':out.get('generated_tokens'),'peak_cuda_allocated_bytes':out.get('peak_cuda_allocated_bytes')})
+                          'generated_tokens':out.get('generated_tokens'),'peak_cuda_allocated_bytes':out.get('peak_cuda_allocated_bytes'),
+                          'peak_cuda_reserved_bytes':out.get('peak_cuda_reserved_bytes'),
+                          'cuda_peak_scope':out.get('cuda_peak_scope')})
             record(op,args,out,kind,'completed' if out.get('completed',True) else 'incomplete');return out
         terminal='completed'
         try:
@@ -149,9 +163,14 @@ class Engine:
                     if self.settings.visual_verifier:
                         from .inference.vision import make_visual_region
                         for region in cheap['regions']:
+                            # A detected but unreadable region still has real
+                            # geometry. Register it before any successful text
+                            # observation so a later reread can be verified.
+                            descriptor=make_visual_region(path,page,region,source_sha256=source_sha)
+                            visual_regions_by_id[region['id']]=descriptor
                             for obs in cheap['observations']:
                                 if obs.get('page_id')==region['page_id'] and obs.get('quad')==region.get('quad'):
-                                    visual_regions[obs['id']]=make_visual_region(path,page,region,source_sha256=source_sha)
+                                    visual_regions[obs['id']]=descriptor
                     snapshot=self.documents.revise(document_id,observations=cheap['observations'],expected_revision=snapshot['revision'],reason='ctc_observations')
                     optics_completed=optics_completed and cheap.get('completed',True)
                     read=call('ocr',{'path':page['path']})
@@ -169,8 +188,10 @@ class Engine:
                     snapshot=self.documents.revise(document_id,observations=[observations[-1]],expected_revision=snapshot['revision'],reason='xiaomi_observation')
             if shared_optics is not None:
                 visual_regions=shared_optics.get('visual_regions',{})
+                visual_regions_by_id=shared_optics.get('visual_regions_by_id',
+                    {d['id']:d for d in visual_regions.values()})
             optics={'source_sha256':source_sha,'observations':observations,'regions':regions,
-                'visual_regions':visual_regions,'completed':optics_completed}
+                'visual_regions':visual_regions,'visual_regions_by_id':visual_regions_by_id,'completed':optics_completed}
             if shared_optics is not None:
                 snapshot=self.documents.revise(document_id,observations=observations,expected_revision=snapshot['revision'],reason='frozen_optical_observations')
             record('strategy_retrieval',{'profile_id':contract['profile_id']},cards,'external')
@@ -247,7 +268,7 @@ class Engine:
                 snapshot=self.documents.revise(document_id,observations=add,expected_revision=snapshot['revision'],reason='bounded_reread')
                 for obs in add:
                     rid=obs['id'].removesuffix('_reread')
-                    match=next((d for d in visual_regions.values() if d['id']==rid),None)
+                    match=visual_regions_by_id.get(rid)
                     if match:visual_regions[obs['id']]=match
                 observations.extend(add);round_no+=1
             if self.settings.visual_verifier and not visual_attempted:

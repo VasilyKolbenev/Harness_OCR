@@ -1,4 +1,4 @@
-"""Portable DB+CTC reader. Two lazy CPU sessions, one sequential owner.
+"""Portable DB/experimental YOLO + Cyrillic CTC, one sequential owner.
 
 Only page raster pixels enter OCR. Neither ground truth, guessed document
 fields nor Qwen output can become CTC observations. Scores are diagnostics;
@@ -25,18 +25,33 @@ def _sha(path):
 
 
 class CheapReader:
-    def __init__(self, models_dir, *, max_lines=200, threads=4):
+    def __init__(self, models_dir, *, max_lines=200, threads=4, text_detector='db', device='cpu'):
         if type(max_lines) is not int or not 1 <= max_lines <= 200:
             raise ValueError('cheap_reader_max_lines_must_be_1_to_200')
         if type(threads) is not int or not 1 <= threads <= 16:
             raise ValueError('cheap_reader_invalid_thread_budget')
+        if text_detector not in {'db', 'yolo26l', 'yolo26x'}:
+            raise ValueError('unknown_text_detector')
+        if device not in {'cpu', 'cuda'}:
+            raise ValueError('unsupported_detector_device')
         self.models_dir = Path(models_dir)
         self.max_lines, self.threads = max_lines, threads
+        self.text_detector, self.device = text_detector, device
         self.config = DetectorConfig()
         self._detector = self._recognizer = None
         self._guard = threading.Lock()
         self._artifacts = {}
         self.chars = None
+
+    def load(self):
+        """Explicit cold-load for a serial warmup; never downloads artifacts."""
+        if not self._guard.acquire(blocking=False):
+            raise RuntimeError('cheap_reader_concurrent_call_forbidden')
+        try:
+            self._load()
+            return self
+        finally:
+            self._guard.release()
 
     def _load(self):
         if self._detector is not None:
@@ -47,17 +62,18 @@ class CheapReader:
         import yaml
         lock = model_lock()['models']
         artifacts = {}
-        for name in ('detector', 'cyrillic'):
+        for name in (('detector', 'cyrillic') if self.text_detector=='db' else ('cyrillic',)):
             spec = {row['file']: row for row in lock[name]['files']}
             for filename in ('inference.onnx', 'inference.yml'):
                 path = self.models_dir / name / filename
                 if not path.is_file() or _sha(path) != spec[filename]['sha256']:
                     raise ValueError(f'cheap_reader_artifact_sha_mismatch:{name}/{filename}')
                 artifacts[f'{name}/{filename}'] = spec[filename]['sha256']
-        detection = yaml.safe_load((self.models_dir / 'detector/inference.yml').read_text(encoding='utf-8'))
-        post = detection['PostProcess']
-        if (post.get('name'), post.get('thresh'), post.get('box_thresh'), post.get('max_candidates'), post.get('unclip_ratio')) != ('DBPostProcess', .3, .6, 1000, 1.5):
-            raise ValueError('unsupported_detector_postprocess_configuration')
+        if self.text_detector=='db':
+            detection = yaml.safe_load((self.models_dir / 'detector/inference.yml').read_text(encoding='utf-8'))
+            post = detection['PostProcess']
+            if (post.get('name'), post.get('thresh'), post.get('box_thresh'), post.get('max_candidates'), post.get('unclip_ratio')) != ('DBPostProcess', .3, .6, 1000, 1.5):
+                raise ValueError('unsupported_detector_postprocess_configuration')
         recognition = yaml.safe_load((self.models_dir / 'cyrillic/inference.yml').read_text(encoding='utf-8'))
         chars = recognition['PostProcess']['character_dict']
         if not isinstance(chars, list) or not chars or any(not isinstance(c, str) or not c for c in chars):
@@ -68,9 +84,29 @@ class CheapReader:
         options.intra_op_num_threads = self.threads
         options.inter_op_num_threads = 1
         options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-        detector = ort.InferenceSession(str(self.models_dir / 'detector/inference.onnx'), sess_options=options, providers=['CPUExecutionProvider'])
+        if self.text_detector=='db':
+            detector = ort.InferenceSession(str(self.models_dir / 'detector/inference.onnx'), sess_options=options, providers=['CPUExecutionProvider'])
+            if len(detector.get_inputs()) != 1:
+                raise ValueError('unsupported_cheap_reader_input_signature')
+        else:
+            from .yolo_detector import YoloTextDetector
+            import torch
+            torch.set_num_threads(self.threads)
+            try:
+                torch.set_num_interop_threads(1)
+            except RuntimeError:
+                if torch.get_num_interop_threads()!=1:
+                    raise RuntimeError('unbound_torch_interop_thread_budget')
+            # The optional detector owns no independent worker or CUDA stream.
+            # It runs inside the same Supervisor lease as Xiaomi and Qwen.
+            detector = YoloTextDetector(self.models_dir, variant=self.text_detector, device=self.device,
+                threads=self.threads).load()
+            name=self.text_detector+'-text'
+            for row in lock[name]['files']:
+                if row['file'].endswith('.pt'):
+                    artifacts[name+'/'+row['file']]=row['sha256']
         recognizer = ort.InferenceSession(str(self.models_dir / 'cyrillic/inference.onnx'), sess_options=options, providers=['CPUExecutionProvider'])
-        if len(detector.get_inputs()) != 1 or len(recognizer.get_inputs()) != 1:
+        if len(recognizer.get_inputs()) != 1:
             raise ValueError('unsupported_cheap_reader_input_signature')
         self.chars = ['blank', *chars, ' ']
         self._artifacts = artifacts
@@ -114,14 +150,23 @@ class CheapReader:
             raise ValueError('page_transform_not_bound_to_original_source')
         if transform.get('raster_sha256') and transform['raster_sha256'] != raster_sha:
             raise ValueError('page_transform_raster_sha_mismatch')
-        self._load()
-        tensor, preprocessing = detector_preprocess(image, self.config)
-        outputs = self._detector.run(None, {self._detector.get_inputs()[0].name: tensor})
-        prediction = np.asarray(outputs[0], np.float32)
-        if prediction.ndim != 4 or prediction.shape[:2] != (1, 1):
-            raise ValueError('expected_db_output_1x1xHxW')
-        quads, detection = detector_postprocess(prediction[0, 0], list(image.size), self.config)
+        load_start=time.perf_counter();self._load();load_seconds=time.perf_counter()-load_start
+        detector_start=time.perf_counter()
+        if self.text_detector=='db':
+            tensor, preprocessing = detector_preprocess(image, self.config)
+            outputs = self._detector.run(None, {self._detector.get_inputs()[0].name: tensor})
+            prediction = np.asarray(outputs[0], np.float32)
+            if prediction.ndim != 4 or prediction.shape[:2] != (1, 1):
+                raise ValueError('expected_db_output_1x1xHxW')
+            quads, detection = detector_postprocess(prediction[0, 0], list(image.size), self.config)
+        else:
+            quads, detection = self._detector.detect(image)
+            preprocessing={'coordinates_refer_to':'actual_page_raster_pixels',
+                'detector_adapter':self.text_detector,
+                'detector_preprocessing':detection.get('preprocess',{})}
+        detector_seconds=time.perf_counter()-detector_start
         line_limited = len(quads) > self.max_lines
+        recognition_start=time.perf_counter()
         observations, regions, ctc_diagnostics = [], [], []
         for index, row in enumerate(quads[:self.max_lines], 1):
             crop, proof = rectify_quad(image, row['quad'])
@@ -143,6 +188,11 @@ class CheapReader:
                 'path': str(crop_path), 'quad': quad, 'bbox': bbox, 'source_size': list(image.size),
                 'source_sha256': source_sha256, 'crop_sha256': crop_sha, 'transform': geometry,
                 'role_hint_routing_only': True, 'semantic_field_role_established': False})
+            if self.text_detector!='db':
+                regions[-1]['text_localization']={'detector':self.text_detector,
+                    'word_quads':row.get('word_quads',[]),'word_ids':row.get('word_ids',[]),
+                    'detector_score':row.get('detector_score'),
+                    'semantic_field_role_established':False}
             if decoded['text']:
                 observations.append({'id': observation_id, 'source_sha256': source_sha256,
                     'text': decoded['text'], 'evidence_kind': 'image_region', 'page': number,
@@ -153,13 +203,24 @@ class CheapReader:
             ctc_diagnostics.append({'region_id': region_id, 'observation_id': observation_id if decoded['text'] else None,
                 **decoded, 'preprocess': metadata, 'actual_output_shape': list(np.asarray(prediction).shape),
                 'semantic_field_role_established': False, 'character_time_steps_are_not_pixel_boxes': True})
-        incomplete = line_limited or bool(detection.get('contour_limit_reached'))
+        recognition_seconds=time.perf_counter()-recognition_start
+        incomplete = line_limited or bool(detection.get('contour_limit_reached')) or bool(detection.get('grouping_ambiguous')) or bool(detection.get('needs_review'))
+        stop_reason=('line_or_contour_limit' if line_limited or detection.get('contour_limit_reached') else
+            'detector_grouping_incomplete' if incomplete else
+            'db_ctc_finished' if self.text_detector=='db' else self.text_detector+'_ctc_finished')
         return {'observations': observations, 'regions': regions, 'completed': not incomplete,
-            'stop_reason': 'line_or_contour_limit' if incomplete else 'db_ctc_finished', 'diagnostics': {
+            'peak_cuda_allocated_bytes':detection.get('cuda_peak_allocated_bytes'),
+            'peak_cuda_reserved_bytes':detection.get('cuda_peak_reserved_bytes'),
+            'cuda_peak_scope':detection.get('cuda_peak_scope'),
+            'stop_reason': stop_reason, 'diagnostics': {
             'completed': not incomplete, 'needs_review': incomplete, 'line_limit_reached': line_limited,
             'lines_detected': len(quads), 'lines_processed': len(regions), 'max_lines': self.max_lines,
-            'stop_reason': 'line_or_contour_limit' if incomplete else 'db_ctc_finished',
-            'seconds': time.perf_counter() - started, 'runtime': {'backend': 'onnxruntime', 'device': 'CPU',
+            'stop_reason': stop_reason,
+            'seconds': time.perf_counter() - started,
+            'load_seconds':load_seconds,'detector_seconds':detector_seconds,'recognition_seconds':recognition_seconds,
+            'runtime': {'backend': 'onnxruntime' if self.text_detector=='db' else 'ultralytics+onnxruntime',
+                'device': 'CPU' if self.text_detector=='db' else self.device,
+                'text_detector':self.text_detector,'recognizer_device':'cpu',
                 'intra_op_threads': self.threads, 'inter_op_threads': 1, 'execution': 'sequential', 'models_parallel': False},
             'artifact_sha256': dict(self._artifacts), 'raster_sha256': raster_sha,
             'preprocess': preprocessing, 'detector': detection, 'ctc': ctc_diagnostics,

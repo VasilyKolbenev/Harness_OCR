@@ -18,6 +18,8 @@ def main():
     infer.add_argument('--profile',required=True);infer.add_argument('--output',type=Path,required=True)
     infer.add_argument('--subset',nargs='+');infer.add_argument('--qwen',choices=['qwen-0.8b','qwen-4b'],default='qwen-0.8b')
     infer.add_argument('--mode',choices=['hybrid','rules'],default='hybrid')
+    infer.add_argument('--text-detector',choices=['db','yolo26l','yolo26x'],default=None,
+        help='Experimental text localization; recognition and field checks remain unchanged')
     bench=sub.add_parser('bench');bench.add_argument('--manifest',type=Path,required=True);bench.add_argument('--output',type=Path,required=True)
     bench.add_argument('--no-controller',action='store_true')
     for command in [infer,bench]:
@@ -49,7 +51,8 @@ def main():
         from .inference.supervisor import Supervisor
         if args.output.exists():raise ValueError('output_already_exists')
         settings=_settings(args,args.output.parent/'state')
-        checked=verify_models(args.models,['xiaomi','detector','cyrillic',args.qwen])
+        detector_key='detector' if settings.text_detector=='db' else settings.text_detector+'-text'
+        checked=verify_models(args.models,['xiaomi',detector_key,'cyrillic',args.qwen])
         if not checked['ok']:raise ValueError(str(checked['errors']))
         backend=Supervisor(settings)
         try:
@@ -75,9 +78,11 @@ def main():
     print(json.dumps(value,ensure_ascii=False,indent=2))
 
 def _settings(args,data_dir):
-    return replace(Settings.from_env(),data_dir=Path(data_dir).resolve(),models_dir=args.models.resolve(),device=args.device,
+    settings=Settings.from_env()
+    return replace(settings,data_dir=Path(data_dir).resolve(),models_dir=args.models.resolve(),device=args.device,
       dtype='float32' if args.device=='cpu' else 'bfloat16',max_new_tokens=args.max_new_tokens,
       call_timeout_seconds=args.call_timeout,document_timeout_seconds=args.document_timeout,
-      qwen=getattr(args,'qwen','qwen-0.8b'))
+      qwen=getattr(args,'qwen','qwen-0.8b'),
+      text_detector=getattr(args,'text_detector',None) or settings.text_detector)
 
 if __name__=='__main__':main()

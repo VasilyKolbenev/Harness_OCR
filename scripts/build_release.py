@@ -34,7 +34,9 @@ def allowed(path):
     if parts[0] == "deployment":
         return path.name in {"base-image-lock.json","actions-lock.json"}
     if parts[0] == "LICENSES":
-        return path.name in {"Apache-2.0.txt","lm-format-enforcer-MIT.txt"}
+        return path.name in {"Apache-2.0.txt","lm-format-enforcer-MIT.txt","Ultralytics-AGPL-3.0.txt"}
+    if parts[:2] == ('experiments', 'yolo26'):
+        return len(parts) == 3 and path.suffix in {'.py', '.md', '.json'}
     if parts[0] == "examples":
         return path.name == "runtime_policy.disabled.json"
     if parts[0] == "docs":

@@ -23,6 +23,8 @@ def score(result,gold):
       'any_wrong_critical':any(r['wrong_literal'] and r['critical'] for r in rows)}
 
 def run_benchmark(manifest_path,output,settings,*,include_controller=True,backend=None):
+    if settings.text_detector != 'db':
+        raise ValueError('legacy_benchmark_requires_db_use_experiments_yolo26')
     # A0 is a no-Qwen rules baseline. Vision is a separate F04 paired exam,
     # never an unrecorded extra Qwen call inherited from the service setting.
     settings=replace(settings,visual_verifier=False)
