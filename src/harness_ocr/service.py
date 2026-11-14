@@ -49,15 +49,17 @@ class Service:
     def _ensure_models(self,qwen):
         if qwen not in {'qwen-0.8b','qwen-4b'}:raise ValueError('unknown_qwen')
         if self.fixture:return {'ok':True,'fixture':True}
-        names=['detector','cyrillic','xiaomi',qwen]
+        detector='detector' if self.settings.text_detector=='db' else self.settings.text_detector+'-text'
+        names=[detector,'cyrillic','xiaomi',qwen]
+        cache_key=(self.settings.text_detector,qwen)
         with self._verification_lock:
             fingerprint=self._fingerprint(names)
-            cached=self._verified.get(qwen)
+            cached=self._verified.get(cache_key)
             if cached and cached['fingerprint']==fingerprint:return cached['verification']
             verification=verify_models(self.settings.models_dir,names)
             if verification['ok']:
-                self._verified[qwen]={'fingerprint':fingerprint,'verification':verification}
-            else:self._verified.pop(qwen,None)
+                self._verified[cache_key]={'fingerprint':fingerprint,'verification':verification}
+            else:self._verified.pop(cache_key,None)
             return verification
     def start(self):
         if self._started or self.owner is not None:raise RuntimeError('service_already_started')

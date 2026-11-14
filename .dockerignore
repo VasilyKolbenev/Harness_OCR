@@ -10,6 +10,11 @@
 !src/**
 !scripts/
 !scripts/**
+!experiments/
+!experiments/yolo26/
+!experiments/yolo26/*.py
+!experiments/yolo26/*.md
+!experiments/yolo26/*.json
 **/__pycache__
 **/*.pyc
 **/*.egg-info

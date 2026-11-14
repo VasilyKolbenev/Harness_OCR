@@ -39,6 +39,10 @@ jobs:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.docker_build)
     needs: software-contracts
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include_yolo: ['0', '1']
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -52,10 +56,13 @@ jobs:
             exit 1
           fi
       - name: Build exact candidate Dockerfile
-        run: docker build --progress plain --tag harness-ocr:ci .
+        run: docker build --progress plain --build-arg HARNESS_INSTALL_YOLO=${{ matrix.include_yolo }} --tag harness-ocr:ci .
       - name: Offline imports in the built image (not GPU acceptance)
         run: |
           docker run --rm --network none --entrypoint python harness-ocr:ci -c "import torch, torchvision; from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForConditionalGeneration; import harness_ocr.api, harness_ocr.mcp_server; assert torch.version.cuda == '13.2'; print('CUDA image import smoke passed; actual GPU inference remains unverified')"
           docker run --rm --network none --entrypoint python harness-ocr:ci -m harness_ocr.cli profiles
+      - name: Offline experimental detector import (no weights or inference)
+        if: matrix.include_yolo == '1'
+        run: docker run --rm --network none --entrypoint python harness-ocr:ci -c "import ultralytics; from harness_ocr.inference.yolo_detector import YoloTextDetector; assert ultralytics.__version__ == '8.4.211'; print('Experimental YOLO runtime import passed; GPU inference remains separate')"
       - name: Record actual built image
         run: docker image inspect harness-ocr:ci --format '{{.Id}}'

@@ -11,6 +11,9 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     HARNESS_DATA=/var/lib/harness HARNESS_MODELS=/models HARNESS_LOCK_DIR=/var/lib/harness/locks \
     OMP_NUM_THREADS=2 TOKENIZERS_PARALLELISM=false
 WORKDIR /app
+ARG HARNESS_INSTALL_YOLO=0
+ENV YOLO_AUTOINSTALL=false YOLO_VERBOSE=false YOLO_OFFLINE=true \
+    YOLO_CONFIG_DIR=/tmp/harness-ultralytics MPLCONFIGDIR=/tmp/harness-matplotlib
 RUN apt-get update && apt-get install --no-install-recommends -y \
       ca-certificates libglib2.0-0 libgomp1 fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
@@ -24,7 +27,12 @@ COPY LICENSE.txt THIRD_PARTY_NOTICES.txt /app/
 COPY LICENSES/ /app/LICENSES/
 COPY src/ /app/src/
 COPY scripts/ /app/scripts/
-RUN python -m pip install --no-cache-dir -r requirements-inference.txt \
+COPY experiments/yolo26/ /app/experiments/yolo26/
+RUN if [ "$HARNESS_INSTALL_YOLO" = "1" ]; then \
+      python -m pip install --no-cache-dir '.[inference,mcp,yolo]'; \
+    elif [ "$HARNESS_INSTALL_YOLO" = "0" ]; then \
+      python -m pip install --no-cache-dir -r requirements-inference.txt; \
+    else echo 'HARNESS_INSTALL_YOLO must be 0 or 1' >&2; exit 2; fi \
     && python -m pip check \
     && python -m pip freeze > /opt/harness-build.freeze.txt
 USER 10001:10001

@@ -5,10 +5,23 @@ import json
 import shutil
 import urllib.request
 import os
+from urllib.parse import urlsplit
 from .util import file_sha, digest, inside
 
 def model_lock():
     return json.loads(resources.files('harness_ocr.data').joinpath('model_lock.json').read_text(encoding='utf-8'))
+
+def model_download_url(spec, item):
+    """Only the pinned official GitHub release or existing HF revision route."""
+    if spec.get('source') == 'github-release':
+        url = item.get('download_url', '')
+        parts = urlsplit(url)
+        expected = f'/ultralytics/assets/releases/download/{spec["revision"]}/{item["file"]}'
+        if (parts.scheme != 'https' or parts.netloc != 'github.com' or
+                parts.path != expected or parts.query or parts.fragment):
+            raise ValueError('unapproved_model_release_url')
+        return url
+    return f'https://huggingface.co/{spec["repo"]}/resolve/{spec["revision"]}/{item["file"]}'
 
 def verify_models(root, names):
     lock=model_lock(); errors=[]; checked=[]
@@ -34,7 +47,7 @@ def prepare_models(root, names, local_sources=None, download=False):
             if src and src.is_file() and file_sha(src)==item['sha256']:
                 shutil.copyfile(src,temp)
             elif download:
-                url=f'https://huggingface.co/{spec["repo"]}/resolve/{spec["revision"]}/{item["file"]}'
+                url=model_download_url(spec,item)
                 with urllib.request.urlopen(url,timeout=120) as r, temp.open('wb') as f:
                     shutil.copyfileobj(r,f,8*1024*1024)
             else: raise FileNotFoundError(f'{name}/{item["file"]}: use --download or verified local source')
