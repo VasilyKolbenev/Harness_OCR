@@ -72,7 +72,7 @@ class Engine:
                 'processor_alignment':32,'processor_may_resize_to_minimum':True},
             'sampler':{'do_sample':False,'use_cache':True,'thinking':False,'logits_to_keep':1,
                        'output_format':'server-generated-json-schema','constraint_engine':'lm-format-enforcer'},
-            'attention':'eager','cpu_threads':{'ctc_intraop':self.settings.cpu_threads,'ctc_interop':1,
+            'attention':self.settings.attention_backend,'cpu_threads':{'ctc_intraop':self.settings.cpu_threads,'ctc_interop':1,
                 'hf_intraop':self.settings.cpu_threads,'hf_interop':1,
                 'environment':{k:os.getenv(k) for k in ('OMP_NUM_THREADS','MKL_NUM_THREADS','OPENBLAS_NUM_THREADS')}},
             'image_preprocess':{'max_pixels':589824,'max_side':1536,'upscale':False},

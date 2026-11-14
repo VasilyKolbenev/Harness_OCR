@@ -232,14 +232,19 @@ def main():
     p.add_argument('--ids', nargs='+')
     p.add_argument('--device', choices=['cpu', 'cuda'], default='cuda')
     p.add_argument('--qwen', choices=['qwen-0.8b', 'qwen-4b'], default='qwen-0.8b')
+    p.add_argument('--max-input-tokens', type=int, default=8192)
+    p.add_argument('--attention-backend', choices=['eager', 'sdpa'], default=None,
+                   help='Explicit override; omitted preserves Settings/environment')
     p.add_argument('--total-seconds', type=float, default=7200)
     p.add_argument('--repeats', type=int, choices=[1, 2, 3], default=1)
     p.add_argument('--call-timeout', type=float, default=120)
     p.add_argument('--document-timeout', type=float, default=600)
     args = p.parse_args()
-    settings = replace(Settings.from_env(), models_dir=args.models.resolve(), data_dir=args.output / 'state',
+    base_settings = Settings.from_env()
+    settings = replace(base_settings, models_dir=args.models.resolve(), data_dir=args.output / 'state',
         device=args.device, dtype='float32' if args.device == 'cpu' else 'bfloat16',
-        qwen=args.qwen, call_timeout_seconds=args.call_timeout,
+        qwen=args.qwen, max_input_tokens=args.max_input_tokens, call_timeout_seconds=args.call_timeout,
+        attention_backend=args.attention_backend or base_settings.attention_backend,
         document_timeout_seconds=args.document_timeout)
     summary = run(args.data, args.output, settings, stage=args.stage, arms=tuple(args.arms),
                   ids=args.ids, total_seconds=args.total_seconds, repeats=args.repeats)

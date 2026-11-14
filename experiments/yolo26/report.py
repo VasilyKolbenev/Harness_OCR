@@ -59,16 +59,22 @@ def report(output, references):
             complete = [r for r in planned if r['status'] == 'completed' and 'score' in r]
             partial = [r for r in planned if r['status'] == 'incomplete' and 'score' in r]
             resources = [r.get('resources', {}) for r in complete]
+            all_resources = [r.get('resources', {}) for r in planned if r['status'] != 'missing']
+            warm_resources = [r.get('resources', {}) for r in planned
+                              if r['status'] != 'missing' and r.get('first_timed_document_in_block') is False]
             item = {'arm': arm, 'cohort': cohort, 'planned': len(planned), 'completed': len(complete),
                 'original_groups_completed': len({r['original_id'] for r in complete}),
                 'incomplete': sum(r['status'] == 'incomplete' for r in planned),
                 'failed': sum(r['status'] == 'failed' for r in planned),
                 'missing': sum(r['status'] == 'missing' for r in planned),
                 'median_wall_seconds_completed': _median([r.get('wall_seconds') for r in resources]),
+                'median_wall_seconds_all_attempts': _median([r.get('wall_seconds') for r in all_resources]),
+                'median_wall_seconds_all_attempts_first_excluded': _median([r.get('wall_seconds') for r in warm_resources]),
+                'resource_measurement_scope': 'all_attempts_including_partial_and_failed_not_only_completed',
                 'max_sampled_runner_worker_rss_bytes': max([r['runner_plus_worker_peak_sampled_rss_bytes']
-                    for r in resources if r.get('runner_plus_worker_peak_sampled_rss_bytes') is not None], default=None),
+                    for r in all_resources if r.get('runner_plus_worker_peak_sampled_rss_bytes') is not None], default=None),
                 'max_sampled_attributable_gpu_bytes': max([r['peak_sampled_attributable_gpu_bytes']
-                    for r in resources if r.get('peak_sampled_attributable_gpu_bytes') is not None], default=None)}
+                    for r in all_resources if r.get('peak_sampled_attributable_gpu_bytes') is not None], default=None)}
             if protocol['stage'] == 'e2e':
                 for name in ('total', 'correct_literal', 'wrong_literal', 'withheld',
                              'validation_pass', 'wrong_validation_pass', 'accepted_for_autofill', 'wrong_accepted'):
@@ -149,7 +155,7 @@ def report(output, references):
 План: {len(rows)} запусков. Протокол: <code>{e(protocol['protocol_sha256'])}</code>.</p>
 <p class="note">Это повторное регрессионное исследование на ранее использованных документах. Физические сканы макетов паспортов и синтетические документы mos.ru показаны отдельно. Качество на новых документах и готовность к производственной эксплуатации этим пилотом не доказаны.</p>
 <p>В E2E сравниваются точные исходные значения выбранных скалярных полей, без исправления по эталону. В optics — только наличие точных эталонных фрагментов в CTC-чтении, без оценки ролей полей; Xiaomi и Qwen в этой стадии не запускаются. Неполные, ошибочные и ненаблюдавшиеся запуски не превращаются в нулевую точность.</p>
-<table><thead><tr><th>Детектор</th><th>Группа</th><th>Завершено / план</th><th>Верно / эталонов завершённых</th><th>Частичные результаты отдельно</th><th>Медиана, с</th><th>Пик RSS, байт</th><th>GPU, байт</th></tr></thead><tbody>{''.join(table_rows)}</tbody></table>
+<table><thead><tr><th>Детектор</th><th>Группа</th><th>Завершено / план</th><th>Верно / эталонов завершённых</th><th>Частичные результаты отдельно</th><th>Медиана полных, с</th><th>Пик RSS всех попыток, байт</th><th>GPU всех попыток, байт</th></tr></thead><tbody>{''.join(table_rows)}</tbody></table>
 <p>RSS — выборочный максимум суммы памяти управляющего процесса и владельца моделей; общие страницы могут учитываться дважды. GPU — только память соответствующих PID по NVML. Отсутствие измерения обозначено явно. Первый документ блока может включать ленивую инициализацию; загрузка E2E вынесена в <a href="loads.json">loads.json</a>. Порядок блоков фиксирован и может влиять на скорость.</p>
 <p>Строгие проверки и политика допуска сохранены. Прошедшая валидация не равна разрешению автозаполнения. Ошибочно принятые значения и число принятых полей доступны в <a href="summary.json">summary.json</a>; нулевой знаменатель не означает доказанную безошибочность.</p>
 <h2>Все запланированные запуски</h2><table><thead><tr><th>Документ</th><th>Детектор</th><th>Повтор</th><th>Статус</th><th>Данные</th></tr></thead><tbody>{''.join(planned_rows)}</tbody></table>

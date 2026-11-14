@@ -29,6 +29,7 @@ class Settings:
     visual_verifier: bool = False
     max_visual_regions: int = 2
     text_detector: str = 'db'
+    attention_backend: str = 'eager'
 
     @property
     def model_lock_dir(self):
@@ -48,6 +49,7 @@ class Settings:
                    dtype=os.getenv('HARNESS_DTYPE','bfloat16'),
                    qwen=os.getenv('HARNESS_QWEN','qwen-0.8b'),
                    text_detector=os.getenv('HARNESS_TEXT_DETECTOR','db'),
+                   attention_backend=os.getenv('HARNESS_ATTENTION_BACKEND','eager'),
                    cpu_threads=int(os.getenv('HARNESS_CPU_THREADS','4')),
                    visual_verifier=os.getenv('HARNESS_VISUAL_VERIFIER','0')=='1',
                    runtime_lock_dir=Path(os.environ['HARNESS_LOCK_DIR']).resolve() if os.getenv('HARNESS_LOCK_DIR') else None)
@@ -58,6 +60,7 @@ class Settings:
         if self.device == 'cpu' and self.dtype != 'float32': raise ValueError('cpu_requires_explicit_float32')
         if self.qwen not in {'qwen-0.8b','qwen-4b'}: raise ValueError('unknown_qwen')
         if self.text_detector not in {'db','yolo26l','yolo26x'}:raise ValueError('unknown_text_detector')
+        if self.attention_backend not in {'eager','sdpa'}:raise ValueError('unsupported_attention_backend')
         for n in ('max_upload_bytes','max_pages','max_page_pixels','max_input_tokens','max_new_tokens','max_rereads'):
             if type(getattr(self,n)) is not int or getattr(self,n) < (0 if n=='max_rereads' else 1):
                 raise ValueError('invalid_limit:'+n)

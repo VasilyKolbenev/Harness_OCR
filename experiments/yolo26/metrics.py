@@ -13,7 +13,9 @@ def score_fields(result, gold):
         field = result.get('fields', {}).get(key, {})
         observed = field.get('extraction_status') == 'observed' and field.get('raw_value') is not None
         same = observed and field['raw_value'] == expected
-        accepted = observed and result.get('decision') == 'accept_for_autofill'
+        accepted = (observed and result.get('decision') == 'accept_for_autofill'
+                    and field.get('decision') == 'accept_for_autofill'
+                    and field.get('validation_status') == 'pass' and not field.get('needs_review'))
         rows.append({'field_key': key, 'correct_literal': bool(same),
             'wrong_literal': bool(observed and not same), 'withheld': not observed,
             'validation_pass': observed and field.get('validation_status') == 'pass',

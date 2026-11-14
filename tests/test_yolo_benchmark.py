@@ -1,4 +1,5 @@
 import json
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ from harness_ocr.ingest import decode
 from harness_ocr.util import digest, file_sha, write_json
 from experiments.yolo26.metrics import score_fields, score_optical_literals
 from experiments.yolo26.run import load_dataset, run
+from experiments.yolo26.run import main as benchmark_main
 from experiments.yolo26.report import report
 
 
@@ -77,7 +79,14 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(scored['wrong_validation_pass'], 1)
         self.assertEqual(scored['wrong_accepted'], 0)
         result['decision'] = 'accept_for_autofill'
+        self.assertEqual(score_fields(result, {'x': '123456'})['wrong_accepted'], 0)
+        result['fields']['x']['decision'] = 'accept_for_autofill'
         self.assertEqual(score_fields(result, {'x': '123456'})['wrong_accepted'], 1)
+        result['fields']['x']['validation_status'] = 'fail'
+        self.assertEqual(score_fields(result, {'x': '123456'})['wrong_accepted'], 0)
+        result['fields']['x']['validation_status'] = 'pass'
+        result['fields']['x']['needs_review'] = True
+        self.assertEqual(score_fields(result, {'x': '123456'})['wrong_accepted'], 0)
 
     def test_optical_score_has_numeric_boundaries_and_no_line_concatenation(self):
         observations = [{'text': '9123456', 'completed': True}, {'text': 'Альфа', 'completed': True},
@@ -91,6 +100,32 @@ class ComparisonTests(unittest.TestCase):
     def setUp(self):
         FakeOwner.calls = []
         FakeOwner.active = FakeOwner.maximum_active = 0
+
+    def test_cli_preserves_environment_attention_and_default_input_limit(self):
+        base = Settings(Path('state'), Path('models'), device='cpu', dtype='float32', attention_backend='sdpa')
+        argv = ['benchmark', '--data', 'data', '--output', 'output', '--models', 'models', '--device', 'cpu']
+        with patch('sys.argv', argv), patch('sys.stdout', new_callable=io.StringIO), \
+                patch('experiments.yolo26.run.Settings.from_env', return_value=base), \
+                patch('experiments.yolo26.run.run', return_value={}) as run_mock:
+            benchmark_main()
+        settings = run_mock.call_args.args[2]
+        self.assertEqual(settings.attention_backend, 'sdpa')
+        self.assertEqual(settings.max_input_tokens, 8192)
+        self.assertEqual(settings.max_new_tokens, 1024)
+
+    def test_cli_explicit_common_v2_attention_context_and_timeouts(self):
+        base = Settings(Path('state'), Path('models'), device='cpu', dtype='float32')
+        argv = ['benchmark', '--data', 'data', '--output', 'output', '--models', 'models', '--device', 'cpu',
+                '--max-input-tokens', '32768', '--attention-backend', 'sdpa', '--call-timeout', '600',
+                '--document-timeout', '1800']
+        with patch('sys.argv', argv), patch('sys.stdout', new_callable=io.StringIO), \
+                patch('experiments.yolo26.run.Settings.from_env', return_value=base), \
+                patch('experiments.yolo26.run.run', return_value={}) as run_mock:
+            benchmark_main()
+        settings = run_mock.call_args.args[2]
+        self.assertEqual((settings.attention_backend, settings.max_input_tokens), ('sdpa', 32768))
+        self.assertEqual((settings.call_timeout_seconds, settings.document_timeout_seconds), (600, 1800))
+        self.assertEqual(settings.max_new_tokens, 1024)
 
     def test_serial_independent_optics_and_reference_isolation(self):
         with tempfile.TemporaryDirectory() as tmp:
