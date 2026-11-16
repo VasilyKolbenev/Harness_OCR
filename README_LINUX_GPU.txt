@@ -15,7 +15,7 @@ Linux x86_64, Docker Engine + Compose v2, NVIDIA Container Toolkit, Python 3.12+
 и загрузке моделей нужен интернет, при инференсе сеть контейнеров выключена.
 
 БЫСТРЫЙ СТАРТ
-  git clone --branch delivery/gpu-rc6 https://github.com/VasilyKolbenev/Harness_OCR.git
+  git clone --branch main https://github.com/VasilyKolbenev/Harness_OCR.git
   cd Harness_OCR
   bash scripts/gpu_handoff.sh --input /absolute/path/to/documents --profile D07 --output "$PWD/reports/run-001"
 
