@@ -9,7 +9,7 @@ from unittest.mock import patch
 from PIL import Image, ImageDraw
 
 from harness_ocr.inference.region_tasks import (
-    context_box, materialize_region, page_from_visual_descriptor)
+    context_box, materialize_region, page_from_visual_descriptor, same_region_geometry)
 from harness_ocr.inference.vision import make_visual_region, prepare_visual_regions
 from harness_ocr.util import file_sha
 
@@ -31,7 +31,9 @@ class ReadingRegionTests(unittest.TestCase):
         region = materialize_region(self.page, [20, 30, 120, 70], self.root/'crops', source_sha256=self.sha)
         descriptor = make_visual_region(self.source, self.page, region, source_sha256=self.sha)
         _, proof = prepare_visual_regions([descriptor])
-        self.assertEqual(proof[0]['quad'], [[20, 30], [120, 30], [120, 70], [20, 70]])
+        self.assertEqual(proof[0]['bbox'], [20, 30, 120, 70])
+        self.assertEqual(descriptor['crop_kind'], 'axis_aligned')
+        self.assertNotIn('quad', descriptor)
         self.assertTrue(proof[0]['raster_transform_proof']['source_to_raster_verification']['exact_raster_pixels_verified'])
         self.assertFalse(proof[0]['raster_transform_proof']['invented_text_or_superresolution'])
         self.assertFalse(region['semantic_field_role_established'])
@@ -93,8 +95,61 @@ class ReadingRegionTests(unittest.TestCase):
     def test_fake_metadata_cannot_turn_an_unrelated_crop_into_the_expected_roi(self):
         region = materialize_region(self.page, [20, 30, 120, 70], self.root/'crops', source_sha256=self.sha)
         descriptor = make_visual_region(self.source, self.page, region, source_sha256=self.sha)
-        bad = deepcopy(descriptor); bad['quad'] = [[200, 100], [300, 100], [300, 140], [200, 140]]
-        with self.assertRaises(ValueError): prepare_visual_regions([bad])
+        bad = deepcopy(descriptor); bad['bbox'] = [200, 100, 300, 140]
+        with self.assertRaisesRegex(ValueError, 'not_pixels_of_declared_region'):
+            prepare_visual_regions([bad])
+
+    def test_tall_multiline_context_preserves_upright_exact_pixels_and_axis_transform(self):
+        # A tall box is deliberately above the line-rectifier rotation ratio.
+        # Unequal colored corners make a rotation or resampling detectable.
+        with Image.open(self.raster) as original:
+            image = original.convert('RGB')
+        draw = ImageDraw.Draw(image)
+        draw.rectangle([60, 10, 69, 19], fill='red')
+        draw.rectangle([150, 220, 159, 229], fill='blue')
+        image.save(self.source); image.save(self.raster)
+        self.sha = file_sha(self.source)
+        self.page['raster_sha256'] = file_sha(self.raster)
+        self.page['transform'].update(source_sha256=self.sha, raster_sha256=self.page['raster_sha256'])
+        box = [60, 10, 160, 230]
+        region = materialize_region(self.page, box, self.root/'tall', source_sha256=self.sha)
+        with Image.open(region['path']) as crop:
+            self.assertEqual(crop.size, (100, 220))
+            self.assertEqual(crop.convert('RGB').tobytes(), image.crop(box).tobytes())
+            self.assertEqual(crop.getpixel((0, 0)), (255, 0, 0))
+            self.assertEqual(crop.getpixel((99, 219)), (0, 0, 255))
+        proof = region['transform']
+        self.assertEqual(proof['version'], 'axis-aligned-crop-v1')
+        self.assertEqual(proof['bbox_source_xy'], box)
+        self.assertEqual(proof['view_size'], [100, 220])
+        self.assertEqual(proof['operations'], [{'operation':'axis_aligned_crop'}])
+        self.assertIn('_task_v2_', region['id'])
+        descriptor = make_visual_region(self.source, self.page, region, source_sha256=self.sha)
+        prepared, replay = prepare_visual_regions([descriptor])
+        self.assertEqual(prepared[0].size, (100, 220))
+        self.assertEqual(prepared[0].tobytes(), image.crop(box).tobytes())
+        self.assertEqual(replay[0]['raster_transform_proof']['bbox_source_xy'], box)
+        self.assertTrue(replay[0]['raster_transform_proof']['source_to_raster_verification']['exact_raster_pixels_verified'])
+        forged = deepcopy(descriptor); forged['bbox'] = [61, 10, 161, 230]
+        with self.assertRaisesRegex(ValueError, 'not_pixels_of_declared_region'):
+            prepare_visual_regions([forged])
+
+    def test_geometry_relatedness_requires_real_exact_source_bound_bbox_or_quad(self):
+        region = materialize_region(self.page, [20, 30, 120, 70], self.root/'crops', source_sha256=self.sha)
+        observation = {key:deepcopy(region[key]) for key in ('source_sha256','page','page_id','source_size','bbox')}
+        self.assertTrue(same_region_geometry(observation, region))
+        for changes in ({'bbox':[21, 30, 121, 70]}, {'source_sha256':'f'*64}, {'page_id':'p2'},
+                        {'bbox':None}, {'source_size':None}, {'page':True}):
+            with self.subTest(changes=changes):
+                self.assertFalse(same_region_geometry({**observation, **changes}, region))
+        self.assertFalse(same_region_geometry({k:v for k,v in observation.items() if k!='bbox'},
+                                             {k:v for k,v in region.items() if k!='bbox'}))
+        quad = [[20, 30], [120, 30], [120, 70], [20, 70]]
+        quad_region = {**region, 'quad':quad}
+        quad_observation = {**observation, 'quad':deepcopy(quad)}; quad_observation.pop('bbox')
+        self.assertTrue(same_region_geometry(quad_observation, quad_region))
+        self.assertFalse(same_region_geometry(observation, quad_region),
+            'An equivalent enclosing bbox cannot substitute for quad geometry')
 
     def test_ocr_refuses_changed_bytes_and_pixel_overflow_before_loading_weights(self):
         from types import SimpleNamespace

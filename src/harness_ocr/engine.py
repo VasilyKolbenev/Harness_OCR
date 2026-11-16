@@ -46,6 +46,7 @@ class Engine:
             self.profiles,profile_id,subset=subset,input_scope_version=self.settings.input_scope_version)
     def binding(self,contract,qwen,mode='hybrid',allow_reread=True,strategy_cards=None):
         from .models import model_lock
+        from .reading import VERSION as READING_VERSION
         if mode not in {'hybrid','rules'} or type(allow_reread) is not bool:raise ValueError('invalid_bound_runtime_mode')
         cards=self.active_cards(contract) if strategy_cards is None else strategy_cards
         limits={name:getattr(self.settings,name) for name in ('max_upload_bytes','max_pages','max_page_pixels',
@@ -67,7 +68,7 @@ class Engine:
             'python':platform.python_version(),'machine':platform.machine(),'dependencies':self.dependency_versions,
             'limits':limits,'mode':mode,'allow_reread':allow_reread,'max_reread_rounds':2,
             'text_detection':text_detection,
-            'reading_controller':{'policy':self.settings.reading_policy,'version':'evidence-driven-reading-v1',
+            'reading_controller':{'policy':self.settings.reading_policy,'version':READING_VERSION,
                 'rescue_detector':self.settings.rescue_text_detector,'rescue_enabled':self.settings.rescue_enabled,
                 'selector_field_windows':2,'source_proofs_retained':True,
                 'conflicts':'all_complete_anchored_readings','reread_target':'source_bound_label_context'},
@@ -171,6 +172,7 @@ class Engine:
                     observations.extend(cheap['observations']);regions.extend(cheap['regions'])
                     if self.settings.visual_verifier:
                         from .inference.vision import make_visual_region
+                        from .inference.region_tasks import same_region_geometry
                         for region in cheap['regions']:
                             # A detected but unreadable region still has real
                             # geometry. Register it before any successful text
@@ -178,7 +180,7 @@ class Engine:
                             descriptor=make_visual_region(path,page,region,source_sha256=source_sha)
                             visual_regions_by_id[region['id']]=descriptor
                             for obs in cheap['observations']:
-                                if obs.get('page_id')==region['page_id'] and obs.get('quad')==region.get('quad'):
+                                if same_region_geometry(obs,region):
                                     visual_regions[obs['id']]=descriptor
                     snapshot=self.documents.revise(document_id,observations=cheap['observations'],expected_revision=snapshot['revision'],reason='ctc_observations')
                     optics_completed=optics_completed and cheap.get('completed',True)

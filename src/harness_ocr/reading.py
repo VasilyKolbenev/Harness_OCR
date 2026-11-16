@@ -13,9 +13,10 @@ from .grounding import (build_candidates, candidate_is_eligible, canonical_candi
 from .typed_fields import value_identity
 from .util import digest
 from .inference.supervisor import ModelCanceled, ModelDeadline
-from .inference.region_tasks import context_box, materialize_region, page_from_visual_descriptor
+from .inference.region_tasks import (context_box, materialize_region, page_from_visual_descriptor,
+                                    same_region_geometry)
 
-VERSION = 'evidence-driven-reading-v1'
+VERSION = 'evidence-driven-reading-v2-upright'
 
 
 def unique_source_proposals(candidates, contract):
@@ -48,6 +49,7 @@ class ReadingController:
         self.qwen, self.mode, self.cards = qwen, mode, cards
         self.reread_limit, self.max_rounds = reread_limit, max_rounds
         self.used = set(); self.reads = 0; self.rescued = set(); self.whole_pages = set()
+        self.generated_context_regions = set()
         self.read_crops = set()
         self.selector_fields = set(); self.errors = []; self.review_reasons = []
         self.complete = True; self.candidates = {}; self.decisions = []
@@ -101,8 +103,7 @@ class ReadingController:
             descriptor = make_visual_region(self.source_path,page,region,source_sha256=self.source_sha)
             self.visual_regions_by_id[region['id']] = descriptor
             for obs in observations:
-                if (obs.get('page_id') == region['page_id']
-                        and obs.get('quad') == region.get('quad') and obs.get('bbox') is None):
+                if same_region_geometry(obs, region):
                     self.visual_regions[obs['id']] = descriptor
 
     def action(self, name, data):
@@ -153,6 +154,11 @@ class ReadingController:
                     self.review_reasons.append('context_crop_unavailable:'+hint['field_key'])
                     self.record('context_crop',hint,{'error':type(exc).__name__+':'+str(exc)[:160]},status='incomplete')
                     return True
+        if region['id'] != original['id']:
+            # A context reading is append-only evidence, not a fresh detector
+            # anchor that can recursively spend the next local-read slot.
+            self.generated_context_regions.add(region['id'])
+            self.used.add(region['id'])
         self.action('targeted_xiaomi_read', {'field_key':hint['field_key'],
             'region_id':region['id'],'basis_region_id':original['id'],'reason':hint['reason_code']})
         crop_key = digest([self.source_sha,region.get('page_id'),region.get('quad'),region.get('bbox')])
@@ -166,10 +172,11 @@ class ReadingController:
         out = self.try_call('ocr',ocr_args,task='roi:'+hint['field_key'])
         if out is None:
             return True
+        geometry = 'quad' if region.get('quad') is not None else 'bbox'
         obs = {'id':'read_'+digest([self.document_id,region['id'],self.reads])[:24],
             'source_sha256':self.source_sha,'text':out['text'],'evidence_kind':'image_region',
             'page':region['page'],'page_id':region['page_id'],'source_size':region['source_size'],
-            'quad':region['quad'],'completed':out['completed'],
+            geometry:region[geometry],'completed':out['completed'],
             'capture_id':'xiaomi_roi_'+digest([self.document_id,region['id'],self.reads])[:24],
             'model_id':'xiaomi','reading_stream_id':'xiaomi:'+region['id'],
             'raster_transform_proof':region.get('transform',{}),'reading_purpose':'field_label_context'}
@@ -320,8 +327,7 @@ class ReadingController:
                             if region['id'] in self.used:
                                 continue
                             related=[o for o in self.observations if o.get('completed')
-                                and o.get('page_id')==region.get('page_id')
-                                and o.get('quad')==region.get('quad')
+                                and same_region_geometry(o, region)
                                 and any(ch.isdigit() for ch in o.get('text',''))
                                 and len(o.get('text',''))<=256]
                             if not related:
@@ -344,8 +350,7 @@ class ReadingController:
                         if region['id'] in self.used:
                             return False
                         return not any(o.get('completed') and o.get('text')
-                            and o.get('page_id')==region.get('page_id')
-                            and o.get('quad')==region.get('quad') for o in self.observations)
+                            and same_region_geometry(o, region) for o in self.observations)
                     empty=[]
                     for region in self.regions:
                         if unread(region):
@@ -370,7 +375,9 @@ class ReadingController:
             'review_reasons':sorted(set(self.review_reasons)),
             'unresolved_rereads':[{'field_key':f,'region_ids':[],'reason_code':'missing',
                 'unresolved_reason':'evidence_driven_budget_or_missing_anchor'} for f in unresolved],
-            'decisions':self.decisions,'used_reread_regions':sorted(self.used),
+            'decisions':self.decisions,
+            'used_reread_regions':sorted(self.used-self.generated_context_regions),
+            'generated_context_regions':sorted(self.generated_context_regions),
             'rescue_pages':sorted(self.rescued),'whole_page_reads':sorted(self.whole_pages)}
 
     def run(self):

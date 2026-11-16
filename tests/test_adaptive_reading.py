@@ -32,10 +32,23 @@ class PixelFakeBackend:
         self.region_text = {}
 
     def cheap_result(self, args, rows, namespace):
+        from harness_ocr.inference.db_geometry import rectify_quad
         page = args['page']; observations = []; regions = []
         for index, (literal, box) in enumerate(rows):
-            region = materialize_region(page, box, args['output_dir'],
-                source_sha256=args['source_sha256'], purpose=namespace+'_'+str(index))
+            # Fake detected lines retain the production line rectifier. Only
+            # server-created multi-line context uses upright bbox cropping.
+            x0,y0,x1,y1 = box; quad = [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]
+            with Image.open(page['path']) as image:
+                crop, proof = rectify_quad(image, quad)
+            target = Path(args['output_dir'])/(namespace+'_'+str(index)+'.png')
+            target.parent.mkdir(parents=True, exist_ok=True); crop.save(target)
+            proof = {**proof, 'raster_sha256':page['raster_sha256'], 'crop_sha256':file_sha(target),
+                'original_source_sha256':args['source_sha256'], 'page_transform':page['transform'],
+                'source_size':page['source_size'], 'coordinates_refer_to':'actual_page_raster_pixels'}
+            region = {'id':namespace+'_r'+str(index), 'path':str(target), 'page':page['page'],
+                'page_id':page['page_id'], 'source_size':page['source_size'],
+                'source_sha256':args['source_sha256'], 'quad':quad, 'bbox':box,
+                'crop_sha256':file_sha(target), 'transform':proof}
             regions.append(region); self.region_text[region['id']] = literal
             if literal:
                 observations.append({'id':namespace+'_o'+str(index), 'source_sha256':args['source_sha256'],
@@ -218,6 +231,25 @@ class AdaptiveReadingTests(unittest.TestCase):
         self.assertLessEqual(len(result['reading_runtime']['used_reread_regions']), 2)
         self.assertEqual(result['reading_runtime']['whole_page_reads'], ['p1'])
         self.assertEqual(result['fields']['passport.number']['extraction_status'], 'not_observed')
+
+    def test_generated_context_is_not_the_next_reread_anchor_for_the_same_value(self):
+        settings = self.settings(max_rereads=2)
+        backend = PixelFakeBackend(settings,
+            primary=[('06.02.1966', [200, 80, 320, 100]), ('200254', [350, 120, 380, 200])],
+            ocr=['06.02.1966', '200254'])
+        _, _, result = self.run_engine(settings, backend=backend,
+            subset=['holder.birth_date', 'passport.number'])
+        self.assertTrue(result['completed'], result['errors'])
+        self.assertEqual(backend.ocr_count, 2)
+        decisions = [d for d in result['reading_runtime']['decisions'] if d['action']=='targeted_xiaomi_read']
+        self.assertEqual([d['field_key'] for d in decisions], ['holder.birth_date', 'passport.number'])
+        generated = {d['region_id'] for d in decisions}
+        self.assertFalse(generated & {d['basis_region_id'] for d in decisions},
+            'A generated multi-line context cannot silently become a fresh detector anchor')
+        self.assertEqual(set(result['reading_runtime']['generated_context_regions']), generated)
+        self.assertEqual(len(result['reading_runtime']['used_reread_regions']), 2)
+        self.assertTrue(all(field['extraction_status']=='not_observed' for field in result['fields'].values()))
+        self.assertEqual(result['decision'], 'review')
 
     def test_bare_repeat_from_whole_page_is_not_role_evidence(self):
         settings = self.settings(max_rereads=0, max_whole_page_reads=1)

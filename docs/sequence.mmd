@@ -7,6 +7,7 @@ sequenceDiagram
     participant Reader as Адаптивный контроллер
     participant Worker as Изолированный воркер моделей
     participant Gate as Доказательства, валидаторы и политика
+    Note over Reader,Worker: Контекстный bbox сохраняет ориентацию страницы; созданный crop не перечитывает сам себя
     Note over Client: rc5: manifest без gold; задания последовательно; качество ещё требует квалификации
     Client->>API: Загрузить файл и создать задание по явному профилю
     API-->>Client: artifact_id, SHA и job_id

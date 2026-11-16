@@ -234,7 +234,6 @@ class PlanningTests(unittest.TestCase):
 class PixelUnionTests(unittest.TestCase):
     def setUp(self):
         from PIL import Image, ImageDraw
-        from harness_ocr.inference.region_tasks import materialize_region
         from harness_ocr.inference.vision import make_visual_region
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -248,7 +247,7 @@ class PixelUnionTests(unittest.TestCase):
                 'source_sha256': self.sha, 'raster_sha256': self.rsha}}
         self.observations, self.regions = [], {}
         for oid, text, box in [('a', 'ACME', [10, 10, 60, 30]), ('b', 'CITY', [80, 10, 130, 30])]:
-            roi = materialize_region(self.page, box, self.root/'crops', source_sha256=self.sha, purpose=oid)
+            roi = self.line_region(box, oid)
             self.regions[oid] = make_visual_region(self.source, self.page, roi, source_sha256=self.sha)
             self.observations.append({'id': oid, 'text': text, 'source_sha256': self.sha,
                 'evidence_kind': 'image_region', 'page': 1, 'page_id': 'p1', 'source_size': [400, 240],
@@ -260,19 +259,30 @@ class PixelUnionTests(unittest.TestCase):
         state = self.store.create_document('doc', self.sha, 'D07', {'field_keys': ['payee.name']})
         self.state = self.store.revise('doc', observations=self.observations, claims=[self.claim], expected_revision=state['revision'])
 
+    def line_region(self, box, ident):
+        """Actual detector-style quad pixels; context cropping is a separate path."""
+        from PIL import Image
+        from harness_ocr.inference.db_geometry import rectify_quad
+        x0,y0,x1,y1 = box; quad = [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]
+        with Image.open(self.raster) as image:
+            crop, proof = rectify_quad(image, quad)
+        target = self.root/(ident+'.png'); crop.save(target)
+        proof = {**proof, 'raster_sha256':self.rsha, 'crop_sha256':file_sha(target),
+            'original_source_sha256':self.sha, 'page_transform':self.page['transform'],
+            'source_size':[400, 240], 'coordinates_refer_to':'actual_page_raster_pixels'}
+        return {'id':ident, 'path':str(target), 'page':1, 'page_id':'p1', 'source_size':[400, 240],
+            'source_sha256':self.sha, 'quad':quad, 'crop_sha256':file_sha(target), 'transform':proof}
+
     def capture(self, *, literal='ACME CITY', kind='quad'):
         from PIL import Image
         from harness_ocr.inference.region_tasks import materialize_region
         from harness_ocr.inference.vision import make_visual_region, prepare_visual_regions, parse_visual_output
         union = value_span_union(self.state, 'name_claim')
         if kind == 'quad':
-            roi = materialize_region(self.page, union['bbox'], self.root/'union', source_sha256=self.sha, purpose='verification_union')
+            roi = self.line_region(union['bbox'], 'quad_union')
         else:
-            target = self.root/'union-axis.png'
-            with Image.open(self.raster) as image: image.crop(union['bbox']).save(target)
-            roi = {'id': 'axis_union', 'path': str(target), 'crop_sha256': file_sha(target), 'page': 1,
-                'page_id': 'p1', 'source_size': [400, 240], 'bbox': union['bbox'],
-                'transform': {'version': 'axis-aligned-crop-v1'}}
+            roi = materialize_region(self.page, union['bbox'], self.root/'union',
+                source_sha256=self.sha, purpose='verification_union')
         descriptor = make_visual_region(self.source, self.page, roi, source_sha256=self.sha)
         _, provenance = prepare_visual_regions([descriptor])
         output = {'text': json.dumps({'readings': {'r1': {'status': 'readable', 'literal': literal}}}),

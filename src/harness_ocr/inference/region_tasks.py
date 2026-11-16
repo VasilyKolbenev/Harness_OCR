@@ -6,9 +6,9 @@ import io
 import math
 from pathlib import Path
 
-from ..util import digest, file_sha
+from ..util import digest
 
-VERSION = 'source-bound-field-regions-v1'
+VERSION = 'source-bound-field-regions-v2-upright'
 
 
 def region_box(region):
@@ -20,6 +20,44 @@ def region_box(region):
             or value[2] <= value[0] or value[3] <= value[1]):
         raise ValueError('reading_region_requires_real_geometry')
     return list(value)
+
+
+def same_region_geometry(observation, region):
+    """Exact source/page/geometry identity; missing geometry never matches.
+
+    A bounding box is not interchangeable with a perspective quad. Detector
+    regions may carry an auxiliary enclosing bbox, but their quad remains the
+    optical geometry when present. This helper routes work/descriptors only.
+    """
+    if not isinstance(observation, dict) or not isinstance(region, dict):
+        return False
+    if (not isinstance(observation.get('source_sha256'), str)
+            or not observation['source_sha256']
+            or observation.get('source_sha256') != region.get('source_sha256')
+            or not isinstance(observation.get('page_id'), str) or not observation['page_id']
+            or observation.get('page_id') != region.get('page_id')
+            or type(observation.get('page')) is not int or observation['page'] < 1
+            or observation.get('page') != region.get('page')
+            or observation.get('source_size') != region.get('source_size')):
+        return False
+    size = observation.get('source_size')
+    if not isinstance(size, list) or len(size) != 2 or any(type(v) is not int or v < 1 for v in size):
+        return False
+    left = 'quad' if observation.get('quad') is not None else 'bbox'
+    right = 'quad' if region.get('quad') is not None else 'bbox'
+    if left != right or observation.get(left) is None or region.get(right) is None:
+        return False
+    try:
+        for item in (observation, region):
+            if left == 'quad' and (not isinstance(item[left], list) or len(item[left]) != 4
+                    or any(not isinstance(p, (list, tuple)) or len(p) != 2 for p in item[left])):
+                return False
+            box = region_box(item)
+            if not (0 <= box[0] < box[2] <= size[0] and 0 <= box[1] < box[3] <= size[1]):
+                return False
+    except (ValueError, TypeError, IndexError, KeyError):
+        return False
+    return observation[left] == region[right]
 
 
 def context_box(region, *, max_area_fraction=.30):
@@ -52,7 +90,6 @@ def materialize_region(page, bbox, output_dir, *, source_sha256, purpose='field_
                        max_page_pixels=12_000_000):
     """Crop exact ingest pixels and retain a replayable original-page transform."""
     from PIL import Image
-    from .db_geometry import rectify_quad
     from ..core.common import identifier, sha256
 
     sha256(source_sha256)
@@ -80,13 +117,18 @@ def materialize_region(page, bbox, output_dir, *, source_sha256, purpose='field_
     x0, y0, x1, y1 = [math.floor(bbox[0]), math.floor(bbox[1]), math.ceil(bbox[2]), math.ceil(bbox[3])]
     if not (0 <= x0 < x1 <= image.width and 0 <= y0 < y1 <= image.height):
         raise ValueError('reading_crop_outside_source')
-    quad = [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]
-    ident = page_id + '_task_' + digest([source_sha256, raster_sha, quad, purpose])[:20]
+    box = [x0,y0,x1,y1]
+    ident = page_id + '_task_v2_' + digest([VERSION, source_sha256, raster_sha, box, purpose])[:20]
     output = Path(output_dir).resolve(); output.mkdir(parents=True, exist_ok=True)
     target = output / (ident + '.png')
     if target == raster_path:
         raise ValueError('reading_crop_would_overwrite_source')
-    crop, proof = rectify_quad(image, quad)
+    # Context may contain multiple upright lines. The detector's line
+    # rectifier rotates tall boxes, which is inappropriate for this crop.
+    crop = image.crop(tuple(box))
+    proof = {'version':'axis-aligned-crop-v1', 'bbox_source_xy':box,
+        'view_size':list(crop.size), 'coordinate_convention':'actual_page_raster_pixel_edges',
+        'operations':[{'operation':'axis_aligned_crop'}], 'invented_text_or_superresolution':False}
     encoded=io.BytesIO();crop.save(encoded,format='PNG');crop_bytes=encoded.getvalue()
     crop_sha=hashlib.sha256(crop_bytes).hexdigest()
     try:
@@ -100,7 +142,7 @@ def materialize_region(page, bbox, output_dir, *, source_sha256, purpose='field_
         'coordinates_refer_to':'actual_page_raster_pixels', 'source_size':list(image.size)}
     return {'id':ident, 'path':str(target), 'page':page['page'], 'page_id':page_id,
         'source_size':list(image.size), 'source_sha256':source_sha256,
-        'quad':quad, 'bbox':[x0,y0,x1,y1], 'crop_sha256':crop_sha, 'transform':proof,
+        'bbox':box, 'crop_sha256':crop_sha, 'transform':proof,
         'reading_purpose':purpose, 'role_hint_routing_only':True,
         'semantic_field_role_established':False}
 

@@ -121,3 +121,5 @@ accuracy or resource usage. Those measurements and target GPU qualification
 remain pending.
 
 Vertical components are checked as separate original ROIs. A page-sized field crop cannot bypass the explicit whole-page reading budget. Value coverage replays the semantic span reconstruction as well as capture checks.
+
+Server-authored context and value-union rectangles use exact upright axis-aligned source crops. A tall context rectangle is not rotated using the detector line-rectification heuristic; the blind verifier reconstructs its bbox pixels independently.
