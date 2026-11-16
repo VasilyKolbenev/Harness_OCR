@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import replace
 import tempfile
 import json
 import unittest
@@ -26,7 +27,9 @@ class EngineRuntimeAuditTests(unittest.TestCase):
         region={'id':'r1','path':'unused.png','page':1,'page_id':'p1','quad':[[0,0],[100,0],[100,100],[0,100]],
                 'source_size':[800,1200]}
         backend=FakeBackend(lambda op,args:{'text':reply(args['prompt'],reread=True),'completed':True} if op=='select' else None)
-        engine=Engine(self.settings,backend)
+        # This fixture injects a selector reread request on the legacy path;
+        # adaptive unique facts do not call the selector at all.
+        engine=Engine(replace(self.settings,reading_policy='legacy'),backend)
         engine.gateway.apply=lambda result,binding:{'decision':'accept_for_autofill','reason_codes':[],'profile_qualified':False}
         result=engine.run('d1',self.root/'unused',SHA,'D01',subset=['passport.number'],
                           shared_optics=optics(regions=[region]),allow_reread=False)

@@ -259,6 +259,56 @@ class DocumentStore:
     @staticmethod
     def _visual_check(item,state):
         from ..inference.vision import compare_visual_capture
+        if isinstance(item,dict) and item.get('comparison_scope')=='source_value_span_union_v1':
+            from ..inference.verification_plan import value_span_union,UNION_SCOPE
+            required={'id','field_key','claim_ids','capture_id','comparison_scope',
+                      'canonical_claim_id','value_spans'}
+            if set(item)!=required:
+                raise EvidenceError('visual_union_requires_closed_source_references')
+            check=clone(item);identifier(check['id'],'visual_check_id')
+            cid=check['canonical_claim_id']
+            if check['claim_ids']!=[cid]:
+                raise EvidenceError('visual_union_requires_one_canonical_claim')
+            try:union=value_span_union(state,cid)
+            except (ValueError,KeyError,TypeError) as exc:
+                raise EvidenceError('visual_union_source_proof_invalid') from exc
+            if check['field_key']!=union['field_key'] or check['value_spans']!=union['value_spans']:
+                raise EvidenceError('visual_union_spans_not_canonical')
+            captured=state['observations'].get(check['capture_id'],{})
+            if captured.get('active') is not True or captured.get('completed') is not True:
+                raise EvidenceError('visual_union_capture_not_active_complete')
+            if captured.get('purpose')!='blind_optical_capture':
+                raise EvidenceError('visual_check_not_blind_capture')
+            for key in ('source_sha256','page','page_id','source_size'):
+                if captured.get(key)!=union[key]:
+                    raise EvidenceError('visual_union_capture_source_mismatch')
+            x0,y0,x1,y1=union['bbox']
+            rectangle=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]]
+            has_box=captured.get('bbox') is not None;has_quad=captured.get('quad') is not None
+            if (has_box==has_quad or (has_box and captured['bbox']!=union['bbox'])
+                    or (has_quad and captured['quad']!=rectangle)):
+                raise EvidenceError('visual_union_requires_exact_source_extent')
+            provenance=captured.get('provenance',{})
+            proof=captured.get('raster_transform_proof',{})
+            if not isinstance(provenance,dict) or not isinstance(proof,dict):
+                raise EvidenceError('visual_union_capture_pixel_proof_missing')
+            source_replay=proof.get('source_to_raster_verification',{})
+            if (not isinstance(source_replay,dict)
+                    or provenance.get('raster_sha256')!=union['raster_sha256']
+                    or provenance.get('raster_transform_proof')!=proof
+                    or proof.get('bbox_source_xy' if has_box else 'quad_source_xy')!=(union['bbox'] if has_box else rectangle)
+                    or source_replay.get('exact_raster_pixels_verified') is not True
+                    or proof.get('invented_text_or_superresolution') is not False):
+                raise EvidenceError('visual_union_capture_pixel_proof_missing')
+            for key in ('source_sha256','page','page_id','source_size','bbox' if has_box else 'quad'):
+                if provenance.get(key)!=captured.get(key):
+                    raise EvidenceError('visual_union_capture_provenance_mismatch')
+            sealed={k:v for k,v in captured.items() if k not in {'active','created_revision'}}
+            check.update(compare_visual_capture(sealed,union['raw_value']))
+            check['comparison_scope']=UNION_SCOPE
+            check['expected_observation_ids']=union['observation_ids']
+            check['value_span_union_sha256']=digest(union)
+            return check
         if not isinstance(item,dict) or set(item)!={'id','field_key','claim_ids','capture_id','expected_observation_id'}:
             raise EvidenceError('visual_check_requires_closed_source_references')
         check=clone(item);identifier(check['id'],'visual_check_id')

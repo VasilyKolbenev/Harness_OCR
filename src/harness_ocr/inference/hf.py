@@ -1,6 +1,7 @@
 from __future__ import annotations
 import time
 import hashlib
+import io
 from pathlib import Path
 from ..util import digest
 
@@ -83,11 +84,24 @@ class HFReaders:
                 'json_constraint_applied':prefix_constraint is not None,
                 'effective_eos_token_ids':eos_ids,
                 'cpu_thread_configuration':self.thread_configuration}
-    def ocr(self,path,max_new_tokens=None):
+    def ocr(self,path,max_new_tokens=None,expected_image_sha256=None):
         from PIL import Image,ImageOps
-        self.load('xiaomi'); processor=self.processors['xiaomi']
-        with Image.open(path) as opened:
+        from .vision import _bytes
+        if expected_image_sha256 is None:
+            with Path(path).open('rb') as stream:
+                data=stream.read(self.settings.max_upload_bytes+1)
+            if len(data)>self.settings.max_upload_bytes:raise ValueError('ocr_image_byte_limit')
+            actual_sha=hashlib.sha256(data).hexdigest()
+        else:
+            data=_bytes(path,expected_image_sha256,limit=self.settings.max_upload_bytes)
+            actual_sha=expected_image_sha256
+        # The exact bytes checked above, not a second open of a mutable path,
+        # are the source of every pixel sent to the model.
+        with Image.open(io.BytesIO(data)) as opened:
+            if opened.width*opened.height>self.settings.max_page_pixels:
+                raise ValueError('ocr_image_pixel_limit')
             image=ImageOps.exif_transpose(opened).convert('RGB')
+        self.load('xiaomi'); processor=self.processors['xiaomi']
         original=list(image.size); scale=min(1.,(589824/(image.width*image.height))**.5,1536/max(image.size))
         if scale<1: image=image.resize((max(1,int(image.width*scale)),max(1,int(image.height*scale))))
         messages=[{'role':'user','content':[{'type':'image','image':image},
@@ -96,6 +110,8 @@ class HFReaders:
         inputs=processor(text=[prompt],images=[image],return_tensors='pt')
         out=self.generate('xiaomi',inputs,max_new_tokens or self.settings.max_new_tokens)
         out['image_preprocess']={'source_size':original,'actual_size':list(image.size),'uniform_scale':scale}
+        out['input_image_sha256']=actual_sha
+        out['input_image_expected_sha_verified']=expected_image_sha256 is not None
         return out
     def select(self,name,prompt,max_new_tokens=None,purpose='selector'):
         from .constraints import build_prefix_constraint,TokenizerDataCache

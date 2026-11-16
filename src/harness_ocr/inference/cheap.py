@@ -25,7 +25,7 @@ def _sha(path):
 
 
 class CheapReader:
-    def __init__(self, models_dir, *, max_lines=200, threads=4, text_detector='db', device='cpu'):
+    def __init__(self, models_dir, *, max_lines=200, threads=4, text_detector='db', device='cpu', id_namespace=None):
         if type(max_lines) is not int or not 1 <= max_lines <= 200:
             raise ValueError('cheap_reader_max_lines_must_be_1_to_200')
         if type(threads) is not int or not 1 <= threads <= 16:
@@ -34,9 +34,12 @@ class CheapReader:
             raise ValueError('unknown_text_detector')
         if device not in {'cpu', 'cuda'}:
             raise ValueError('unsupported_detector_device')
+        if id_namespace is not None and (not isinstance(id_namespace,str) or id_namespace not in {'yolo26l','yolo26x'}):
+            raise ValueError('unsupported_detector_id_namespace')
         self.models_dir = Path(models_dir)
         self.max_lines, self.threads = max_lines, threads
         self.text_detector, self.device = text_detector, device
+        self.id_namespace=id_namespace
         self.config = DetectorConfig()
         self._detector = self._recognizer = None
         self._guard = threading.Lock()
@@ -129,6 +132,8 @@ class CheapReader:
         if type(number) is not int or number < 1:
             raise ValueError('invalid_page_number')
         page_id = identifier(page.get('page_id'), 'page_id')
+        prefix=page_id+'_'+self.id_namespace if self.id_namespace is not None else page_id
+        identifier(prefix+'_ctc'+str(self.max_lines),'detector_observation_id')
         source = Path(page['path']).resolve(strict=True)
         output = Path(output_dir).resolve()
         # A fresh page-specific folder makes every crop immutable on disk.
@@ -170,7 +175,7 @@ class CheapReader:
         observations, regions, ctc_diagnostics = [], [], []
         for index, row in enumerate(quads[:self.max_lines], 1):
             crop, proof = rectify_quad(image, row['quad'])
-            crop_path = output / f'{page_id}_line{index}.png'
+            crop_path = output / f'{prefix}_line{index}.png'
             if crop_path.resolve() == source:
                 raise ValueError('crop_would_overwrite_source')
             crop.save(crop_path, format='PNG')
@@ -179,7 +184,7 @@ class CheapReader:
             decoded = ctc_decode(prediction, self.chars)
             quad = row['quad']
             bbox = [min(p[0] for p in quad), min(p[1] for p in quad), max(p[0] for p in quad), max(p[1] for p in quad)]
-            region_id, observation_id = f'{page_id}_r{index}', f'{page_id}_ctc{index}'
+            region_id, observation_id = f'{prefix}_r{index}', f'{prefix}_ctc{index}'
             crop_sha = _sha(crop_path)
             geometry = {**proof, 'raster_sha256': raster_sha, 'crop_sha256': crop_sha,
                         'original_source_sha256': source_sha256, 'page_transform': transform,
@@ -198,6 +203,7 @@ class CheapReader:
                     'text': decoded['text'], 'evidence_kind': 'image_region', 'page': number,
                     'page_id': page_id, 'quad': quad, 'source_size': list(image.size), 'completed': True,
                     'capture_id': f'{page_id}:ctc:{crop_sha[:20]}', 'model_id': 'cyrillic-ctc',
+                    'reading_stream_id':f'ctc:{page_id}:{self.text_detector}',
                     'source_transform': transform, 'raster_transform_proof': geometry,
                     'score_calibrated': False})
             ctc_diagnostics.append({'region_id': region_id, 'observation_id': observation_id if decoded['text'] else None,
@@ -221,6 +227,7 @@ class CheapReader:
             'runtime': {'backend': 'onnxruntime' if self.text_detector=='db' else 'ultralytics+onnxruntime',
                 'device': 'CPU' if self.text_detector=='db' else self.device,
                 'text_detector':self.text_detector,'recognizer_device':'cpu',
+                'id_namespace':self.id_namespace,
                 'intra_op_threads': self.threads, 'inter_op_threads': 1, 'execution': 'sequential', 'models_parallel': False},
             'artifact_sha256': dict(self._artifacts), 'raster_sha256': raster_sha,
             'preprocess': preprocessing, 'detector': detection, 'ctc': ctc_diagnostics,

@@ -26,7 +26,7 @@ def _worker_entry(conn,settings,target):
         lease.close();conn.close()
 
 def _worker(conn,settings):
-    hf=None; cheap=None
+    hf=None; cheap=None; rescue=None
     try:
         while True:
             request=conn.recv()
@@ -34,11 +34,20 @@ def _worker(conn,settings):
             try:
                 op=request['op']; args=request.get('args',{})
                 if op=='probe':
+                    settings.validate()
+                    if settings.rescue_enabled:
+                        from importlib.util import find_spec
+                        if find_spec('ultralytics') is None:
+                            raise RuntimeError('configured_rescue_runtime_not_installed')
                     import torch
                     if settings.device=='cuda' and not torch.cuda.is_available(): raise RuntimeError('cuda_required_no_cpu_fallback')
                     value={'device':settings.device,'torch':torch.__version__,
                            'gpu':torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
                            'capability':list(torch.cuda.get_device_capability()) if torch.cuda.is_available() else None}
+                    value.update(reading_policy=settings.reading_policy,
+                                 rescue_text_detector=settings.rescue_text_detector,
+                                 rescue_enabled=settings.rescue_enabled,rescue_initialized=rescue is not None,
+                                 rescue_loaded=bool(rescue is not None and rescue._detector is not None))
                     if args.get('warmup'):
                         from .hf import HFReaders
                         hf=HFReaders(settings);hf.load('xiaomi');hf.load(settings.qwen)
@@ -60,6 +69,18 @@ def _worker(conn,settings):
                         cheap=CheapReader(settings.models_dir,threads=settings.cpu_threads,
                             text_detector=settings.text_detector,device=settings.device)
                     value=cheap.read(**args)
+                elif op=='cheap_rescue':
+                    settings.validate()
+                    if not settings.rescue_enabled:
+                        raise ValueError('detector_rescue_not_enabled')
+                    if not isinstance(args,dict) or set(args)!={'page','source_sha256','output_dir'}:
+                        raise ValueError('invalid_detector_rescue_arguments')
+                    if rescue is None:
+                        from .cheap import CheapReader
+                        rescue=CheapReader(settings.models_dir,threads=settings.cpu_threads,
+                            text_detector=settings.rescue_text_detector,device=settings.device,
+                            id_namespace=settings.rescue_text_detector)
+                    value=rescue.read(**args)
                 else:
                     if hf is None:
                         from .hf import HFReaders

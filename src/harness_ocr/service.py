@@ -51,7 +51,11 @@ class Service:
         if self.fixture:return {'ok':True,'fixture':True}
         detector='detector' if self.settings.text_detector=='db' else self.settings.text_detector+'-text'
         names=[detector,'cyrillic','xiaomi',qwen]
-        cache_key=(self.settings.text_detector,qwen)
+        if self.settings.rescue_enabled:
+            rescue=self.settings.rescue_text_detector+'-text'
+            if rescue not in names:names.append(rescue)
+        cache_key=(self.settings.text_detector,self.settings.reading_policy,
+                   self.settings.rescue_text_detector,self.settings.max_detector_rescues,qwen)
         with self._verification_lock:
             fingerprint=self._fingerprint(names)
             cached=self._verified.get(cache_key)

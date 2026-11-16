@@ -8,6 +8,7 @@ and zero-length-array limitation are explicitly guarded below.
 """
 from __future__ import annotations
 from collections import OrderedDict
+from bisect import bisect_left
 from importlib.metadata import version
 import json
 import re
@@ -17,7 +18,7 @@ from lmformatenforcer.characterlevelparser import CharacterLevelParser
 from lmformatenforcer.tokenenforcer import TokenEnforcer,TokenEnforcerTokenizerData
 from ..util import digest
 
-VERSION='server-allowlist-json-v1'
+VERSION='server-allowlist-json-v3-semantic-escapes'
 ENGINE='lm-format-enforcer/0.11.3'
 REASONS=['missing','ambiguous_role','ambiguous_characters','conflict','incomplete','critical_recheck']
 
@@ -55,8 +56,14 @@ def build_response_schema(prompt,purpose='selector'):
         if (not isinstance(regions,list) or not 1<=len(regions)<=4
             or any(not isinstance(r,str) for r in regions) or len(set(regions))!=len(regions)):
             raise ConstraintError('visual_region_allowlist_budget')
-        readings={_identifier(rid):_obj({'status':_string_enum(['readable','unreadable','ambiguous']),
-                    'literal':{'type':'string','maxLength':2048}}) for rid in regions}
+        # The status is a discriminator, not an independent enum. Once the
+        # model chooses unreadable, no nonempty literal is a legal prefix.
+        # Empty readable/ambiguous captures retain the existing abstention
+        # policy in compare_visual_capture; they never corroborate a claim.
+        readings={_identifier(rid):{'oneOf':[
+            _obj({'status':_string_enum(['unreadable']),'literal':_string_enum([''])}),
+            _obj({'status':_string_enum(['readable','ambiguous']),
+                  'literal':{'type':'string','maxLength':2048}})]} for rid in regions}
         return _obj({'readings':_obj(readings)})
     if purpose!='selector':raise ConstraintError('unsupported_constraint_purpose')
     try:material=_load(prompt)
@@ -98,11 +105,12 @@ def build_response_schema(prompt,purpose='selector'):
          'region_ids':{'type':'array','items':_string_enum(regions) if regions else {'type':'string'},
                        'minItems':1,'maxItems':min(4,len(regions)),'uniqueItems':True},
          'reason_code':_string_enum(REASONS)})
-    return _obj({'proposals':{'type':'array','items':pitem,'minItems':0,'maxItems':len(proposals)},
+    return _obj({'proposals':{'type':'array','items':pitem,'minItems':0,'maxItems':len(proposals),
+                            'x-uniqueBy':'field_key'},
         'reread_requests':{'type':'array','items':request,'minItems':0,'maxItems':20 if regions else 0}})
 
 def _valid(value,schema):
-    """Validate only the closed schema subset emitted above, including uniqueItems."""
+    """Validate the closed server subset, including item and field uniqueness."""
     if 'oneOf' in schema:return sum(_valid(value,s) for s in schema['oneOf'])==1
     if schema.get('type')=='object':
         return (isinstance(value,dict) and set(value)==set(schema['required'])
@@ -110,22 +118,147 @@ def _valid(value,schema):
     if schema.get('type')=='array':
         if not isinstance(value,list) or not schema['minItems']<=len(value)<=schema['maxItems']:return False
         if schema.get('uniqueItems') and len({json.dumps(v,sort_keys=True) for v in value})!=len(value):return False
+        if schema.get('x-uniqueBy'):
+            key=schema['x-uniqueBy']
+            if any(not isinstance(v,dict) or key not in v for v in value):return False
+            if len({json.dumps(v[key],sort_keys=True) for v in value})!=len(value):return False
         return all(_valid(v,schema['items']) for v in value)
     if schema.get('type')=='string':return (isinstance(value,str) and ('enum' not in schema or value in schema['enum'])
             and len(value)<=schema.get('maxLength',len(value)))
     return False
 
+
+class _EnumChoices:
+    """Small indexed enum prefixes; exclusion sets belong to one JSON array."""
+    def __init__(self,values):
+        self.encoded=tuple(sorted((json.dumps(v,ensure_ascii=False),v) for v in set(values)))
+        self.keys=tuple(key for key,_ in self.encoded)
+        self.cache=OrderedDict()
+
+    def next_characters(self,prefix,excluded):
+        key=(prefix,excluded)
+        if key in self.cache:
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        chars=set()
+        for index in range(bisect_left(self.keys,prefix),len(self.keys)):
+            encoded,value=self.encoded[index]
+            if not encoded.startswith(prefix):break
+            if value not in excluded and len(encoded)>len(prefix):chars.add(encoded[len(prefix)])
+        result=frozenset(chars);self.cache[key]=result
+        # Keep this cache inside one generation. A decorated global method
+        # cache would retain old rules/allowlists via its self keys.
+        while len(self.cache)>512:self.cache.popitem(last=False)
+        return result
+
+
+class _UniqueRules:
+    """Compile the server schema's two uniqueness contracts, never model data."""
+    def __init__(self,schema):
+        self.by_arrays={};primitive={}
+        def visit(spec,name=None):
+            if spec.get('type')=='array':
+                item=spec['items']
+                if spec.get('uniqueItems') and item.get('type')=='string' and 'enum' in item:
+                    primitive.setdefault(name,set()).update(item['enum'])
+                if spec.get('x-uniqueBy'):
+                    key=spec['x-uniqueBy'];values=[]
+                    for variant in item.get('oneOf',[item]):
+                        values.extend(variant.get('properties',{}).get(key,{}).get('enum',[]))
+                    self.by_arrays[name]=(key,_EnumChoices(values))
+                visit(item,name)
+            for key,value in spec.get('properties',{}).items():visit(value,key)
+            for option in spec.get('oneOf',[]):visit(option,name)
+        visit(schema)
+        self.primitive={name:_EnumChoices(values) for name,values in primitive.items()}
+
+
+class _SelectorState:
+    """Immutable lexical state for selector uniqueness during token traversal.
+
+    The upstream schema parser still owns JSON syntax, field order and enum
+    membership. This state only removes already-used enum values, so it cannot
+    add a token or turn untrusted document text into a server allowlist. Frames
+    and sets are copied on each branch; no parser state crosses generations.
+    """
+    def __init__(self,rules,frames=(),string=None,is_key=False,escaped=False):
+        self.rules=rules;self.frames=frames;self.string=string
+        self.is_key=is_key;self.escaped=escaped
+
+    def allowed_string_characters(self):
+        if self.string is None or self.is_key or not self.frames:return None
+        frame=self.frames[-1]
+        if frame['kind']=='array' and frame['name'] in self.rules.primitive:
+            return self.rules.primitive[frame['name']].next_characters(self.string,frame['seen'])
+        if frame['kind']=='object' and len(self.frames)>1:
+            parent=self.frames[-2]
+            rule=self.rules.by_arrays.get(parent['name']) if parent['kind']=='array' else None
+            if rule and frame['key']==rule[0]:
+                return rule[1].next_characters(self.string,parent['seen'])
+        return None
+
+    def add(self,ch):
+        frames=list(self.frames)
+        def finish(value=None,closed=None):
+            if not frames:return
+            parent=dict(frames[-1])
+            if parent['kind']=='object':
+                if value is not None:parent['values']=(*parent['values'],(parent['key'],value))
+                parent['phase']='comma'
+            else:
+                if value is not None and parent['name'] in self.rules.primitive:
+                    parent['seen']=parent['seen']|{value}
+                rule=self.rules.by_arrays.get(parent['name'])
+                if closed is not None and rule:
+                    observed=dict(closed['values']).get(rule[0])
+                    if observed is not None:parent['seen']=parent['seen']|{observed}
+            frames[-1]=parent
+        if self.string is not None:
+            if ch=='"' and not self.escaped:
+                value=json.loads(self.string+ch)
+                if self.is_key:
+                    frame=dict(frames[-1]);frame.update(key=value,phase='colon');frames[-1]=frame
+                else:finish(value=value)
+                return _SelectorState(self.rules,tuple(frames))
+            return _SelectorState(self.rules,tuple(frames),self.string+ch,self.is_key,
+                                  not self.escaped if ch=='\\' else False)
+        if ch in ' \t\r\n':return self
+        if ch=='"':
+            is_key=bool(frames and frames[-1]['kind']=='object' and frames[-1]['phase']=='key')
+            return _SelectorState(self.rules,tuple(frames),'"',is_key)
+        if ch in '{[':
+            name=frames[-1]['key'] if frames and frames[-1]['kind']=='object' else None
+            frames.append({'kind':'object' if ch=='{' else 'array','name':name,'key':None,
+                           'phase':'key' if ch=='{' else 'value','values':(),'seen':frozenset()})
+        elif ch in '}]':
+            closed=frames.pop();finish(closed=closed if ch=='}' else None)
+        elif ch==':':
+            frame=dict(frames[-1]);frame['phase']='value';frames[-1]=frame
+        elif ch==',':
+            frame=dict(frames[-1])
+            if frame['kind']=='object':frame.update(phase='key',key=None)
+            frames[-1]=frame
+        else:raise ConstraintError('unsupported_selector_json_token')
+        return _SelectorState(self.rules,tuple(frames))
+
+
 class _StrictJsonParser(CharacterLevelParser):
-    def __init__(self,schema,inner=None,prefix=''):
+    def __init__(self,schema,inner=None,prefix='',semantic=None):
         self.schema=schema;self.inner=inner or JsonSchemaParser(schema,config=CharacterLevelParserConfig(
             max_consecutive_whitespaces=4,force_json_field_order=True,max_json_array_length=32))
         self.prefix=prefix
+        self.semantic=semantic or (_SelectorState(_UniqueRules(schema))
+            if 'proposals' in schema.get('properties',{}) else None)
         self.empty_arrays=[name for name,spec in schema.get('properties',{}).items() if spec.get('type')=='array' and spec.get('maxItems')==0]
     def add_character(self,ch):
         if ch not in self.get_allowed_characters():raise ConstraintError('parser_character_outside_closed_schema')
-        return _StrictJsonParser(self.schema,self.inner.add_character(ch),self.prefix+ch)
+        return _StrictJsonParser(self.schema,self.inner.add_character(ch),self.prefix+ch,
+                                 self.semantic.add(ch) if self.semantic is not None else None)
     def get_allowed_characters(self):
         chars=self.inner.get_allowed_characters()
+        if self.semantic is not None:
+            semantic_chars=self.semantic.allowed_string_characters()
+            if semantic_chars is not None:chars=''.join(c for c in chars if c in semantic_chars)
         for key in self.empty_arrays:
             if re.search(re.escape(json.dumps(key))+r'\s*:\s*\[\s*$',self.prefix):
                 return ''.join(c for c in chars if c in ' \t\r\n]')
@@ -181,9 +314,23 @@ class TokenizerDataCache:
 
 _DEFAULT_CACHE=TokenizerDataCache()
 
+class _StrictTokenEnforcer(TokenEnforcer):
+    def _collect_allowed_tokens(self,parser,tree_node,allowed_tokens,shortcut_key):
+        super()._collect_allowed_tokens(parser,tree_node,allowed_tokens,shortcut_key)
+        # LMFE's fast free-string cache requires each token's escape sequences
+        # to be complete JSON on their own. Qwen has a real token for "\\u",
+        # which is a valid prefix, but not a complete escape. Keep the fast
+        # cache for ordinary text and additionally traverse only the escape
+        # subtree through the same strict parser. No schema/length guard is
+        # bypassed, and unreadable's enum string never enters this shortcut.
+        if (isinstance(shortcut_key,tuple) and shortcut_key[0]=='json_freetext'
+                and '\\' in tree_node.children and '\\' in parser.get_allowed_characters()):
+            self._collect_allowed_tokens(parser.add_character('\\'),tree_node.children['\\'],
+                                         allowed_tokens,None)
+
 class _PrefixConstraint:
     def __init__(self,data,schema):
-        self.data=data;self.schema=schema;self.enforcer=TokenEnforcer(data,_StrictJsonParser(schema));self.initial=None
+        self.data=data;self.schema=schema;self.enforcer=_StrictTokenEnforcer(data,_StrictJsonParser(schema));self.initial=None
         self.eos=set(data.eos_token_id if isinstance(data.eos_token_id,list) else [data.eos_token_id])
         self.eos_token_ids=sorted(self.eos)
         self.response_schema_sha256=digest(schema);self.constraint_engine=ENGINE;self.schema_generation_version=VERSION
@@ -198,6 +345,8 @@ class _PrefixConstraint:
             state=self.enforcer.prefix_states.get(parent)
             if state is None or suffix[-1] not in state.allowed_tokens.allowed_tokens:
                 raise ConstraintError('generated_token_outside_allowed_prefix')
+            if isinstance(state.parser,_StrictJsonParser) and state.parser.can_end():
+                raise ConstraintError('token_after_complete_json')
         allowed=list(self.enforcer.get_allowed_tokens(suffix).allowed_tokens)
         state=self.enforcer.prefix_states.get(tuple(suffix))
         # Upstream turns unknown exceptions into EOS. Do not let this turn an
@@ -205,6 +354,9 @@ class _PrefixConstraint:
         if (not allowed or state is None or not isinstance(state.parser,_StrictJsonParser)
                 or (self.eos.intersection(allowed) and not state.parser.can_end())):
             raise ConstraintError('constraint_parser_failed_closed')
+        # A complete, fully validated response has exactly one continuation:
+        # EOS. Do not spend a bounded generation on irrelevant JSON padding.
+        if state.parser.can_end():return sorted(self.eos.intersection(allowed))
         return allowed
 
 def build_prefix_constraint(tokenizer,prompt,purpose='selector',cache=None):

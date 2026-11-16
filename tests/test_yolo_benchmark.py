@@ -101,6 +101,13 @@ class ComparisonTests(unittest.TestCase):
         FakeOwner.calls = []
         FakeOwner.active = FakeOwner.maximum_active = 0
 
+    def test_isolated_detector_comparison_refuses_secondary_detector(self):
+        settings = Settings(Path('state'),Path('models'),device='cpu',dtype='float32',
+                            rescue_text_detector='yolo26l')
+        with self.assertRaisesRegex(ValueError,'requires_rescue_disabled'):
+            run(Path('not-opened'),Path('not-created'),settings,fixture=True)
+        self.assertEqual(FakeOwner.active,0)
+
     def test_cli_preserves_environment_attention_and_default_input_limit(self):
         base = Settings(Path('state'), Path('models'), device='cpu', dtype='float32', attention_backend='sdpa')
         argv = ['benchmark', '--data', 'data', '--output', 'output', '--models', 'models', '--device', 'cpu']

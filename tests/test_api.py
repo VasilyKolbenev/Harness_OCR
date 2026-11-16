@@ -156,7 +156,23 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(forged.status_code, 422)
         trace = client.get(f'/v1/jobs/{job["id"]}/trace', headers=self.headers())
         self.assertEqual(trace.status_code, 200)
-        self.assertTrue(any(row['stage'] == 'select' for row in trace.json()))
+        records = trace.json()
+        # A unique source-grounded value takes the adaptive deterministic path;
+        # the audit must describe the work performed, without a redundant model.
+        self.assertNotIn('select', self.backend.calls)
+        self.assertFalse(any(row['stage'] == 'select' for row in records))
+        resolved = next(row for row in records if row['stage'] == 'resolve')
+        selected = next(row for row in records if row['stage'] == 'deterministic_selection')
+        for row in (resolved, selected):
+            self.assertEqual(row['document_id'], job['id'])
+            self.assertEqual(row['stage_kind'], 'pure')
+            self.assertTrue(row['deterministic'])
+            self.assertEqual(row['status'], 'completed')
+        self.assertEqual(selected['outputs']['resolved'], resolved['outputs'])
+        self.assertEqual(selected['outputs']['authority'], 'existing_literal_and_role_guards')
+        claims = resolved['outputs']['claims']
+        self.assertTrue(any(claim['field_key'] == 'passport.number' and claim['raw_value'] == '567890'
+                            for claim in claims))
 
     def test_idempotent_submission_and_payload_mismatch(self):
         self.start()

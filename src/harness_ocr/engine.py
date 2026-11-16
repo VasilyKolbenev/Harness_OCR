@@ -14,7 +14,7 @@ from .control.audit import AuditController,AuditLog,AuditSampler,DriftMonitor
 from .control.strategies import StrategyStore
 from .control.risk import RiskPolicyStore
 from .control.runtime import BindingPolicyGateway,unsupported_strategy_actions
-from .grounding import build_candidates,qwen_prompt,resolve_response,validate_literal,CANDIDATE_GENERATOR_VERSION as CANDIDATE_VERSION
+from .grounding import build_candidates,qwen_prompt,resolve_response,validate_literal,candidate_is_eligible,CANDIDATE_GENERATOR_VERSION as CANDIDATE_VERSION
 from .util import digest,utc,file_sha
 from .inference.supervisor import ModelCanceled,ModelDeadline
 from .typed_fields import value_identity
@@ -49,7 +49,8 @@ class Engine:
         if mode not in {'hybrid','rules'} or type(allow_reread) is not bool:raise ValueError('invalid_bound_runtime_mode')
         cards=self.active_cards(contract) if strategy_cards is None else strategy_cards
         limits={name:getattr(self.settings,name) for name in ('max_upload_bytes','max_pages','max_page_pixels',
-            'max_input_tokens','max_new_tokens','call_timeout_seconds','document_timeout_seconds','max_rereads')}
+            'max_input_tokens','max_new_tokens','call_timeout_seconds','document_timeout_seconds','max_rereads',
+            'max_detector_rescues','max_whole_page_reads')}
         text_detection={'selector':self.settings.text_detector,'max_lines':200,
             'recognizer':'cyrillic-ctc','recognizer_device':'cpu','word_geometry_is_not_field_role':True}
         if self.settings.text_detector=='db':
@@ -66,8 +67,14 @@ class Engine:
             'python':platform.python_version(),'machine':platform.machine(),'dependencies':self.dependency_versions,
             'limits':limits,'mode':mode,'allow_reread':allow_reread,'max_reread_rounds':2,
             'text_detection':text_detection,
+            'reading_controller':{'policy':self.settings.reading_policy,'version':'evidence-driven-reading-v1',
+                'rescue_detector':self.settings.rescue_text_detector,'rescue_enabled':self.settings.rescue_enabled,
+                'selector_field_windows':2,'source_proofs_retained':True,
+                'conflicts':'all_complete_anchored_readings','reread_target':'source_bound_label_context'},
             'visual_verifier':{'enabled':self.settings.visual_verifier,'max_regions':self.settings.max_visual_regions,
-                'protocol':'blind-visual-capture-v1','comparison':'complete_original_observation_literal',
+                'protocol':'blind-visual-capture-v1',
+                'comparison':('source_value_span_coverage_v1' if self.settings.reading_policy=='adaptive'
+                              else 'complete_original_observation_literal'),
                 'max_pixels':589824,'max_side':1536,'processor_min_pixels':1024,
                 'processor_alignment':32,'processor_may_resize_to_minimum':True},
             'sampler':{'do_sample':False,'use_cache':True,'thinking':False,'logits_to_keep':1,
@@ -99,6 +106,7 @@ class Engine:
         strategy_reasons=[];strategy_info={'active_cards':[],'unsupported_actions':[]}
         unresolved_rereads=[]
         visual_checks=[];visual_regions={};visual_regions_by_id={};visual_attempted=False;native_ingestion=None
+        page_registry={};reading_runtime=None;visual_plan=None
         def record(name,inputs,outputs,kind='pure',status='completed'):
             self.trace.record(name,inputs,outputs,{'pipeline_version':'1','contract':contract['config_sha256']},
                document_id=document_id,stage_kind=kind,deterministic=kind=='pure',status=status)
@@ -156,6 +164,7 @@ class Engine:
                     optics_completed=False
                     raise ValueError('native_adapter_not_registered_for_profile')
                 for page in ingestion['pages']:
+                    page_registry[page['page_id']]=page
                     checkpoint()
                     cheap=call('cheap',{'page':page,'source_sha256':source_sha,
                                   'output_dir':str(self.root/'regions'/document_id/page['page_id'])})
@@ -173,12 +182,19 @@ class Engine:
                                     visual_regions[obs['id']]=descriptor
                     snapshot=self.documents.revise(document_id,observations=cheap['observations'],expected_revision=snapshot['revision'],reason='ctc_observations')
                     optics_completed=optics_completed and cheap.get('completed',True)
-                    read=call('ocr',{'path':page['path']})
+                    if self.settings.reading_policy=='adaptive':
+                        # Local context reads and optional rescue are planned
+                        # from the complete candidate ledger below. Do not read
+                        # every whole page merely because it was uploaded.
+                        continue
+                    read=call('ocr',{'path':page['path'],**({'expected_image_sha256':page['raster_sha256']}
+                                   if page.get('raster_sha256') else {})})
                     observations.append({'id':page['page_id']+'_xiaomi','source_sha256':source_sha,
                         'text':read['text'],'evidence_kind':'image_region','page':page['page'],'page_id':page['page_id'],
                         'source_size':page['source_size'],'bbox':[0,0,*page['source_size']],
                         'completed':read['completed'],'capture_id':document_id+'_xiaomi_'+page['page_id'],
-                        'model_id':'xiaomi','raster_transform_proof':page['transform']})
+                        'model_id':'xiaomi','reading_stream_id':'xiaomi:'+page['page_id']+':whole',
+                        'raster_transform_proof':page['transform']})
                     if self.settings.visual_verifier:
                         # Page-wide Xiaomi claims have page-wide evidence. They
                         # must be compared against the full page, never a guessed
@@ -213,6 +229,23 @@ class Engine:
             errors.extend(strategy_reasons)
             used=set();round_no=0
             while True:
+                if self.settings.reading_policy=='adaptive' and native_ingestion is None:
+                    from .reading import ReadingController
+                    def adaptive_call(op,args):
+                        nonlocal stage
+                        stage='adaptive_'+op
+                        return call(op,args)
+                    controller=ReadingController(self,document_id=document_id,source_path=path,
+                        source_sha256=source_sha,contract=contract,snapshot=snapshot,
+                        observations=observations,regions=regions,pages=page_registry,
+                        visual_regions=visual_regions,visual_regions_by_id=visual_regions_by_id,
+                        call=adaptive_call,record=record,checkpoint=checkpoint,qwen=qwen,mode=mode,
+                        cards=cards,reread_limit=reread_limit,max_rounds=max_rounds)
+                    reading_runtime=controller.run();snapshot=reading_runtime.pop('snapshot')
+                    optics_completed=optics_completed and reading_runtime['completed']
+                    errors.extend(reading_runtime['errors']);strategy_reasons.extend(reading_runtime['review_reasons'])
+                    unresolved_rereads=reading_runtime['unresolved_rereads']
+                    break
                 checkpoint();stage='candidates';candidates=build_candidates(observations,contract)
                 record('candidates',{'observations':observations,'contract':contract},candidates)
                 if native_ingestion is not None:break
@@ -226,7 +259,7 @@ class Engine:
                 if mode=='rules':
                     proposals=[]
                     for field in contract['requested_fields']:
-                        group=[c for c in candidates.values() if c['field_key']==field and c['role_verified']]
+                        group=[c for c in candidates.values() if c['field_key']==field and candidate_is_eligible(c)]
                         values={digest(value_identity(c['raw_value'])) for c in group}
                         if len(values)==1:
                             c=group[0];proposals.append({'field_key':field,'candidate_ids':[c['id']],'party_role':c['party_role']})
@@ -258,12 +291,14 @@ class Engine:
                 by_id={r['id']:r for r in regions};add=[]
                 for rid in pending[:reread_limit-len(used)]:
                     region=by_id[rid];used.add(rid);stage='reread'
-                    read=call('ocr',{'path':region['path']})
+                    read=call('ocr',{'path':region['path'],**({'expected_image_sha256':region['crop_sha256']}
+                                   if region.get('crop_sha256') else {})})
                     add.append({'id':rid+'_reread','source_sha256':source_sha,'text':read['text'],
                          'evidence_kind':'image_region','page':region['page'],'page_id':region['page_id'],
                          'source_size':region['source_size'],'quad':region['quad'],
                          'completed':read['completed'],'capture_id':document_id+'_reread_'+rid,
-                         'model_id':'xiaomi','raster_transform_proof':region.get('transform',{})})
+                         'model_id':'xiaomi','reading_stream_id':'xiaomi:'+rid+':reread',
+                         'raster_transform_proof':region.get('transform',{})})
                     optics_completed=optics_completed and read['completed']
                 snapshot=self.documents.revise(document_id,observations=add,expected_revision=snapshot['revision'],reason='bounded_reread')
                 for obs in add:
@@ -271,6 +306,16 @@ class Engine:
                     match=visual_regions_by_id.get(rid)
                     if match:visual_regions[obs['id']]=match
                 observations.extend(add);round_no+=1
+            if (self.settings.visual_verifier and not visual_attempted
+                    and self.settings.reading_policy=='adaptive'):
+                visual_attempted=True;stage='visual_verifier'
+                snapshot,visual_checks,visual_plan,visual_errors,visual_reasons=self._visual_value_checks(
+                    snapshot,contract,path,source_sha,page_registry,visual_regions,
+                    document_id,call,record,checkpoint,qwen=qwen)
+                observations[:]=[{k:v for k,v in o.items() if k not in {'active','created_revision'}}
+                    for o in snapshot['observations'].values()]
+                errors.extend(visual_errors);strategy_reasons.extend(visual_reasons)
+                if visual_errors:selector_complete=False
             if self.settings.visual_verifier and not visual_attempted:
                 visual_attempted=True;stage='visual_verifier'
                 requests=[];approved_regions={}
@@ -324,15 +369,80 @@ class Engine:
                       mode=mode,qwen=qwen,finished_utc=utc(),optics=optics,strategy_runtime=strategy_info,
                       unresolved_rereads=unresolved_rereads)
         result['native_ingestion']=native_ingestion
+        result['reading_runtime']=reading_runtime
         result['visual_verification']={'enabled':self.settings.visual_verifier,'checks':visual_checks,
-            'max_regions':self.settings.max_visual_regions,'automatic_acceptance_authority':False}
+            'max_regions':self.settings.max_visual_regions,'automatic_acceptance_authority':False,
+            'plan':visual_plan}
         record('result',{'revision':snapshot['revision']}, {k:v for k,v in result.items() if k!='optics'})
         return result
+
+    def _visual_value_checks(self,snapshot,contract,path,source_sha,pages,visual_regions,
+                             document_id,call,record,checkpoint,*,qwen):
+        from .inference.verification_plan import plan_verification,UNION_SCOPE
+        from .inference.region_tasks import materialize_region,page_from_visual_descriptor
+        from .inference.vision import make_visual_region
+        plan=plan_verification(snapshot,contract['requested_fields'],visual_regions,
+                               max_regions=self.settings.max_visual_regions)
+        record('visual_plan',{'revision':snapshot['revision']},plan)
+        page_map=dict(pages)
+        for descriptor in visual_regions.values():
+            page_map.setdefault(descriptor['page_id'],page_from_visual_descriptor(descriptor))
+        descriptors=dict(plan['regions']);errors=[];reasons=list(plan['review_reasons'])
+        for key,union in plan['union_regions'].items():
+            try:
+                page=page_map[union['page_id']]
+                if page['raster_sha256']!=union['raster_sha256']:
+                    raise ValueError('visual_union_page_not_bound')
+                region=materialize_region(page,union['bbox'],self.root/'visual_unions'/document_id,
+                    source_sha256=source_sha,purpose='blind_value_union',
+                    max_page_pixels=self.settings.max_page_pixels)
+                descriptors[key]=make_visual_region(path,page,region,source_sha256=source_sha)
+            except (ValueError,KeyError,OSError) as exc:
+                errors.append('visual_union_unavailable:'+type(exc).__name__+':'+str(exc)[:160])
+                record('visual_union',union,{'error':str(exc)[:160]},status='incomplete')
+        captures={};failed=set();checks=[]
+        for request in plan['requests']:
+            checkpoint();field=request['field_key'];key=request['region_key']
+            if key in failed or key not in descriptors:
+                reasons.append('visual_verification_unavailable_or_budget:'+field);continue
+            try:
+                if key not in captures:
+                    out=call('visual_read',{'name':qwen,'regions':[descriptors[key]]})
+                    if (out.get('completed') is not True or out.get('stop_reason')!='eos'
+                        or out.get('modality')!='vision' or out.get('purpose')!='blind_optical_capture'
+                        or not isinstance(out.get('captures'),list) or len(out['captures'])!=1
+                        or out['captures'][0].get('provenance',{}).get('region_id')!=descriptors[key]['id']):
+                        raise ValueError('visual_generation_incomplete_or_provenance_invalid')
+                    capture=out['captures'][0]
+                    snapshot=self.documents.revise(document_id,observations=[capture],
+                        expected_revision=snapshot['revision'],reason='blind_value_capture')
+                    captures[key]=capture
+                check={'id':'visual_check_'+digest([field,request['kind'],key,captures[key]['id'],request['claim_ids']])[:24],
+                    'field_key':field,'claim_ids':request['claim_ids'],'capture_id':captures[key]['id']}
+                if request['kind']=='value_span_union':
+                    check.update(comparison_scope=UNION_SCOPE,canonical_claim_id=request['canonical_claim_id'],
+                                 value_spans=request['value_spans'])
+                else:
+                    check['expected_observation_id']=request['observation_id']
+                snapshot=self.documents.revise(document_id,visual_checks=[check],
+                    expected_revision=snapshot['revision'],reason='blind_value_literal_comparison')
+                checks.append(snapshot['visual_checks'][check['id']])
+            except ModelCanceled:
+                raise
+            except ModelDeadline as exc:
+                checkpoint()
+                failed.add(key);errors.append('visual_task_deadline:'+field+':'+str(exc))
+                reasons.append('visual_verification_incomplete:'+field)
+            except Exception as exc:
+                failed.add(key);errors.append('visual_task_failed:'+field+':'+type(exc).__name__+':'+str(exc)[:160])
+                reasons.append('visual_verification_incomplete:'+field)
+        return snapshot,checks,plan,errors,sorted(set(reasons))
+
     @staticmethod
     def _candidate_conflict_claims(candidates,snapshot):
         groups={}
         for candidate in candidates.values():
-            if candidate.get('role_verified'):
+            if candidate_is_eligible(candidate):
                 groups.setdefault(candidate['field_key'],[]).append(candidate)
         claims=[]
         for field,items in groups.items():
@@ -371,15 +481,34 @@ class Engine:
             if self.settings.visual_verifier and observed:
                 live_claims=[snapshot['claims'][cid] for cid in current.get('claim_ids',[])
                     if snapshot['claims'][cid]['status'] in {'supported','human_supported'}]
-                raster_ids={oid for claim in live_claims for oid in claim['evidence_ids']
-                    if snapshot['observations'][oid]['evidence_kind']=='image_region'}
-                verified_ids={check['expected_observation_id'] for check in snapshot.get('visual_checks',{}).values()
-                    if check['field_key']==key and check['verdict']=='correct'
-                    and any(cid in current.get('claim_ids',[]) for cid in check['claim_ids'])
-                    and all(snapshot['observations'].get(oid,{}).get('active') is True
-                        and snapshot['observations'][oid].get('completed') is True
-                        for oid in (check['capture_id'],check['expected_observation_id']))}
-                if raster_ids:value['visual_verification_complete']=raster_ids<=verified_ids
+                localization_valid=True
+                if self.settings.reading_policy=='adaptive':
+                    from .inference.verification_plan import validated_value_observation_ids,verified_value_observation_ids
+                    raster_ids=set();localization_valid=True
+                    for claim in live_claims:
+                        try:
+                            raster_ids.update(oid for oid in validated_value_observation_ids(claim,snapshot['observations'])
+                                if snapshot['observations'][oid]['evidence_kind']=='image_region')
+                        except (ValueError,KeyError):
+                            localization_valid=False
+                    verified_ids=verified_value_observation_ids(snapshot,key,current)
+                    value['visual_verification_scope']='source_value_span_coverage_v1'
+                    value['visual_required_observation_ids']=sorted(raster_ids)
+                    value['visual_verified_observation_ids']=sorted(verified_ids)
+                    if not localization_valid:
+                        value['visual_verification_complete']=False
+                        review_reasons=[*review_reasons,'visual_value_span_proof_missing:'+key]
+                else:
+                    raster_ids={oid for claim in live_claims for oid in claim['evidence_ids']
+                        if snapshot['observations'][oid]['evidence_kind']=='image_region'}
+                    verified_ids={check['expected_observation_id'] for check in snapshot.get('visual_checks',{}).values()
+                        if check['field_key']==key and check['verdict']=='correct'
+                        and 'expected_observation_id' in check
+                        and any(cid in current.get('claim_ids',[]) for cid in check['claim_ids'])
+                        and all(snapshot['observations'].get(oid,{}).get('active') is True
+                            and snapshot['observations'][oid].get('completed') is True
+                            for oid in (check['capture_id'],check['expected_observation_id']))}
+                if raster_ids:value['visual_verification_complete']=localization_valid and raster_ids<=verified_ids
                 if raster_ids and not value['visual_verification_complete']:
                     review_reasons=[*review_reasons,'visual_verification_incomplete:'+key]
             if inactive and raw is not None:

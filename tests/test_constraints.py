@@ -97,7 +97,7 @@ class GrammarTests(unittest.TestCase):
         fn=build_prefix_constraint(data(),prompt())
         self.assertEqual(fn.constraint_engine,'lm-format-enforcer/0.11.3')
         self.assertEqual(len(fn.response_schema_sha256),64)
-        self.assertEqual(fn.schema_generation_version,'server-allowlist-json-v1')
+        self.assertEqual(fn.schema_generation_version,'server-allowlist-json-v3-semantic-escapes')
         self.assertEqual(fn.eos_token_ids,[EOS])
     def test_callback_after_eos_is_refused_instead_of_parsing_special_token(self):
         fn=build_prefix_constraint(data(),prompt());fn(0,[])

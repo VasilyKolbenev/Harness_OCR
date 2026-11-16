@@ -85,6 +85,8 @@ def run(data, output, settings, *, stage='e2e', arms=('db', 'yolo26l', 'yolo26x'
         sampler_factory=ResourceSampler, fixture=False):
     if stage not in {'optics', 'e2e'} or repeats not in {1, 2, 3}:
         raise ValueError('invalid_stage_or_repeats')
+    if settings.rescue_enabled:
+        raise ValueError('isolated_detector_comparison_requires_rescue_disabled')
     if not arms or len(set(arms)) != len(arms) or not set(arms) <= {'db', 'yolo26l', 'yolo26x'}:
         raise ValueError('invalid_detector_arms')
     if not isinstance(total_seconds, (int, float)) or total_seconds <= 0:

@@ -3,66 +3,84 @@ sequenceDiagram
     participant API as HTTP сервис
     participant Jobs as Очередь SQLite
     participant Owner as Общий владелец устройства
-    participant State as Состояние документа
-    participant Worker as Изолированный воркер
-    participant Gate as Проверки и политика
-    Note over Client: run_documents: manifest без gold; задания последовательно
-    Client->>API: Загрузить файл
-    API-->>Client: artifact_id и SHA
-    Client->>API: Создать задание по профилю
+    participant State as Наблюдения, кандидаты и состояние
+    participant Reader as Адаптивный контроллер
+    participant Worker as Изолированный воркер моделей
+    participant Gate as Доказательства, валидаторы и политика
+    Note over Client: rc5: manifest без gold; задания последовательно; качество ещё требует квалификации
+    Client->>API: Загрузить файл и создать задание по явному профилю
+    API-->>Client: artifact_id, SHA и job_id
     API->>Jobs: Сохранить queued
-    API-->>Client: job_id
     Jobs->>Owner: Проверка весов и атомарный захват задания
     Owner->>Owner: Допуск устройства и lease воркера
     Owner->>Worker: ingest с серверным profile_id и deadline
     alt Зарегистрированная МЧД D04
         Worker->>Worker: Оригинальный pinned XSD и точный mapper
         Worker-->>Owner: Наблюдения, claims, все стороны и ограничения
-        Owner->>Owner: Replay полного результата по исходному артефакту
+        Owner->>Owner: Replay по исходному артефакту
         Owner->>State: Атомарно native-сводка и проверенные наблюдения
         Owner->>State: Native claims следующей ревизией
         Note over Owner,State: Без OCR и Qwen; подпись, отзыв и полномочия not_verified
     else Generic XML или неподдерживаемая native-версия
         Worker-->>Owner: Диагностика или явная ошибка адаптера
         Note over Owner,Gate: failed без наследования квалификации
-    else Растровый документ
-        Worker->>Worker: DB/CTC и Xiaomi по страницам
-        Worker-->>Owner: Наблюдения, геометрия и crop proofs
-        Owner->>State: Неизменяемые наблюдения
-        Owner->>Gate: Буквальные и вложенные typed-кандидаты, роли и версии
-        Gate-->>Owner: Проверяемые ID и конфликты
-        Owner->>Worker: Qwen selector, allowlists, стратегии и бюджет
-        Worker-->>Owner: Только ID кандидатов и запросы ROI
-        Owner->>State: Проверенные утверждения и конфликты
-        opt Есть разрешённый бюджет перечитывания
-            Owner->>Worker: Xiaomi по разрешённым ROI
-            Worker-->>Owner: Новые наблюдения
-            Owner->>State: Сохранить новую ревизию
-            Owner->>Worker: Selector по обновлённым кандидатам
-            Worker-->>Owner: Проверяемые ID
+    else Растровый документ, adaptive
+        Worker->>Worker: DB-области и кириллический CTC по страницам
+        Worker-->>Owner: Текст, геометрия, пустые области и crop proofs
+        Owner->>State: Добавить неизменяемые наблюдения
+        Owner->>Reader: Контракт, наблюдения и доступные бюджеты
+        loop Пока не хватает доказательств и есть ограниченный следующий шаг
+            Reader->>State: Новый журнал кандидатов, границы и связи с метками
+            opt Подлинная неоднозначность одного поля и есть окно selector
+                Reader->>Worker: Qwen: только это поле, разрешённые ID и области
+                Worker-->>Reader: Закрытый JSON с предложением маршрута чтения
+                Note over Reader,Gate: Предпочтение модели не удаляет противоречия
+            end
+            alt Оборванная граница или пробел оптики; rescue включён
+                Reader->>Worker: YOLO-L только выбранной страницы, затем тот же CTC
+                Worker-->>Reader: Дополнительная геометрия и чтения
+                Note over Reader,Worker: По умолчанию rescue none; при включении бюджет 1; CTC не независим
+            else Есть адресная область и бюджет перечитывания
+                Reader->>Worker: Xiaomi: исходная ROI с контекстом метки
+                Worker-->>Reader: Буквальное чтение и provenance
+                Note over Reader,Worker: По умолчанию до 2 ROI; повтор одинаковой области исключён
+            else Адресные возможности исчерпаны; доступен fallback
+                Reader->>Worker: Xiaomi: одна разрешённая полная страница
+                Worker-->>Reader: Полностраничное наблюдение
+                Note over Reader,Worker: По умолчанию не более 1 fallback-страницы на документ
+            end
+            Reader->>State: Добавить наблюдения; сохранить решения и версии кандидатов
         end
+        Reader->>Gate: Итоговый журнал, все противоречия и уникальные буквальные кандидаты
+        Gate->>State: Перепроверить происхождение, границы и роль; записать утверждения
+        Note over State,Gate: Неясная роль даёт review; неверный ИНН или дата не исправляются
         opt Включено слепое визуальное чтение
+            Owner->>State: Получить value spans всех живых утверждений
+            Owner->>Owner: Локализованные ROI либо реальная union ROI полных фрагментов
+            Note over Owner,State: Полностраничное corroboration сохраняется, но не считается проверкой поля
             Note over Owner,Worker: Compose включён; Settings выключен; бюджет 2 уникальные ROI
-            Owner->>Owner: Все evidence IDs; дедупликация дескрипторов ROI по SHA
-            Owner->>Worker: Только имя модели и серверные ROI
-            Worker->>Worker: Проверить исходник, растр и фактические пиксели crop
-            Worker->>Worker: Новый VLM capture без кандидата и gold
-            Worker-->>Owner: Оптический литерал и provenance
-            Owner->>State: Один capture на ROI; отдельное сравнение каждого полного чтения
-            Note over Owner,State: Повтор capture не создаёт независимых свидетельств
-            Note over State,Gate: Расхождение, воздержание или неполный охват дают review
+            Owner->>Worker: Проверенные пиксели и позиционные ID без кандидата и gold
+            Worker->>Worker: Проверить исходник, растр, crop и тензоры
+            Worker-->>Owner: Новый слепой capture: literal или unreadable с пустой строкой
+            Owner->>State: Дословное сравнение исходного чтения или полного union-значения
+            Note over State,Gate: Расхождение, неподтверждённая локализация или неполный охват дают review
+            Note over Owner,Worker: Qwen text и vision не объявляются независимыми
         end
+    else Растровый документ, legacy
+        Worker->>Worker: Прежний DB/CTC и Xiaomi каждой полной страницы
+        Worker-->>Owner: Наблюдения для прежнего selector и перечитываний
+        Owner->>State: Утверждения, конфликты и полные visual-сравнения
+        Note over Owner,Gate: Отдельный runtime binding; результаты не смешиваются с adaptive
     end
     Owner->>Gate: Активные evidence, typed-полнота, роли, лимиты и применимость
-    Owner->>Jobs: Атомарное completed/failed/canceled/budget_exhausted
+    Owner->>Jobs: Атомарное completed / failed / canceled / budget_exhausted
     Client->>API: Получить результат
     API->>Gate: Актуальная политика, binding и терминальное состояние
-    Gate->>State: Ревизия, конфликты, native-сводка, применимость и доказательства
-    Gate-->>API: Поля и решение review/accept_for_autofill
-    API->>API: Аудит опубликованного результата
-    API-->>Client: contract_result и evidence
-    Client->>API: Получить trace и терминальное состояние
-    API-->>Client: Трасса и статус
+    Gate->>State: Ревизия, конфликты, native-сводка и доказательства
+    Gate-->>API: Поля и решение review / accept_for_autofill
+    Note over Gate,API: По умолчанию квалифицированной политики автоматического принятия нет
+    API->>API: Выборочный аудит опубликованного результата и контроль дрейфа
+    API-->>Client: contract_result, evidence, trace и статус
     Note over Client: Сохранить result/trace/status и сводку; runtime отдельно от точности
     opt Авторизованная правка оператора
         Client->>API: Правка с expected_revision и отдельным токеном

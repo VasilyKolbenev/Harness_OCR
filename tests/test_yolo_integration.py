@@ -185,7 +185,8 @@ class EmptyCtcVisualRegressionTests(unittest.TestCase):
     def test_successful_reread_of_previously_empty_ctc_has_full_visual_evidence(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);source=root/'source.png';Image.new('RGB',(320,80),'white').save(source)
-            settings=Settings(root/'state',root/'models',device='cpu',dtype='float32',visual_verifier=True)
+            settings=Settings(root/'state',root/'models',device='cpu',dtype='float32',visual_verifier=True,
+                              reading_policy='legacy')
             backend=EmptyCtcRereadBackend(settings);engine=Engine(settings,backend)
             result=engine.run('empty-ctc',source,file_sha(source),'D01',subset=['passport.number'])
             self.assertEqual(result['terminal_status'],'completed',result['errors'])

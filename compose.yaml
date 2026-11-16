@@ -1,7 +1,7 @@
 name: harness-ocr
 services:
   ocr:
-    image: ${HARNESS_IMAGE:-harness-ocr:0.1.0rc4}
+    image: ${HARNESS_IMAGE:-harness-ocr:0.1.0rc5}
     build:
       context: .
       args:
@@ -22,6 +22,10 @@ services:
       HARNESS_DTYPE: bfloat16
       HARNESS_QWEN: ${HARNESS_QWEN:-qwen-0.8b}
       HARNESS_TEXT_DETECTOR: ${HARNESS_TEXT_DETECTOR:-db}
+      HARNESS_READING_POLICY: ${HARNESS_READING_POLICY:-adaptive}
+      HARNESS_RESCUE_TEXT_DETECTOR: ${HARNESS_RESCUE_TEXT_DETECTOR:-none}
+      HARNESS_MAX_DETECTOR_RESCUES: "${HARNESS_MAX_DETECTOR_RESCUES:-1}"
+      HARNESS_MAX_WHOLE_PAGE_READS: "${HARNESS_MAX_WHOLE_PAGE_READS:-1}"
       HARNESS_VISUAL_VERIFIER: ${HARNESS_VISUAL_VERIFIER:-1}
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"

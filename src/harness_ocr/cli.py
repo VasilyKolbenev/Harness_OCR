@@ -26,6 +26,11 @@ def main():
         command.add_argument('--models',type=Path,required=True);command.add_argument('--device',choices=['cpu','cuda'],default='cuda')
         command.add_argument('--max-new-tokens',type=int,default=1024);command.add_argument('--call-timeout',type=float,default=120)
         command.add_argument('--document-timeout',type=float,default=600)
+        command.add_argument('--reading-policy',choices=['adaptive','legacy'],default=None)
+        command.add_argument('--rescue-text-detector',choices=['none','yolo26l','yolo26x'],default=None,
+            help='Optional sequential second detector; requires prepared weights and optional YOLO runtime')
+        command.add_argument('--max-detector-rescues',type=int,default=None)
+        command.add_argument('--max-whole-page-reads',type=int,default=None)
     replay=sub.add_parser('replay-candidates');replay.add_argument('--record',type=Path,required=True)
     replay.add_argument('--output',type=Path,required=True)
     args=p.parse_args()
@@ -52,7 +57,11 @@ def main():
         if args.output.exists():raise ValueError('output_already_exists')
         settings=_settings(args,args.output.parent/'state')
         detector_key='detector' if settings.text_detector=='db' else settings.text_detector+'-text'
-        checked=verify_models(args.models,['xiaomi',detector_key,'cyrillic',args.qwen])
+        model_names=['xiaomi',detector_key,'cyrillic',args.qwen]
+        if settings.rescue_enabled:
+            rescue=settings.rescue_text_detector+'-text'
+            if rescue not in model_names:model_names.append(rescue)
+        checked=verify_models(args.models,model_names)
         if not checked['ok']:raise ValueError(str(checked['errors']))
         backend=Supervisor(settings)
         try:
@@ -79,10 +88,18 @@ def main():
 
 def _settings(args,data_dir):
     settings=Settings.from_env()
-    return replace(settings,data_dir=Path(data_dir).resolve(),models_dir=args.models.resolve(),device=args.device,
+    chosen=replace(settings,data_dir=Path(data_dir).resolve(),models_dir=args.models.resolve(),device=args.device,
       dtype='float32' if args.device=='cpu' else 'bfloat16',max_new_tokens=args.max_new_tokens,
       call_timeout_seconds=args.call_timeout,document_timeout_seconds=args.document_timeout,
       qwen=getattr(args,'qwen','qwen-0.8b'),
-      text_detector=getattr(args,'text_detector',None) or settings.text_detector)
+      text_detector=getattr(args,'text_detector',None) or settings.text_detector,
+      reading_policy=getattr(args,'reading_policy',None) or settings.reading_policy,
+      rescue_text_detector=getattr(args,'rescue_text_detector',None) or settings.rescue_text_detector,
+      max_detector_rescues=(getattr(args,'max_detector_rescues',None) if getattr(args,'max_detector_rescues',None) is not None
+                            else settings.max_detector_rescues),
+      max_whole_page_reads=(getattr(args,'max_whole_page_reads',None) if getattr(args,'max_whole_page_reads',None) is not None
+                            else settings.max_whole_page_reads))
+    chosen.validate()
+    return chosen
 
 if __name__=='__main__':main()

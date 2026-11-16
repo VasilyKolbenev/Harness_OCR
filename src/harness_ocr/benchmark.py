@@ -27,7 +27,8 @@ def run_benchmark(manifest_path,output,settings,*,include_controller=True,backen
         raise ValueError('legacy_benchmark_requires_db_use_experiments_yolo26')
     # A0 is a no-Qwen rules baseline. Vision is a separate F04 paired exam,
     # never an unrecorded extra Qwen call inherited from the service setting.
-    settings=replace(settings,visual_verifier=False)
+    settings=replace(settings,visual_verifier=False,reading_policy='legacy',
+                     rescue_text_detector='none',max_detector_rescues=0)
     manifest_path=Path(manifest_path).resolve()
     manifest=json.loads(manifest_path.read_text(encoding='utf-8-sig'))
     if manifest.get('schema_version')!='harness-bench/1' or manifest.get('split') not in {'dev','blind'}:
@@ -59,7 +60,9 @@ def run_benchmark(manifest_path,output,settings,*,include_controller=True,backen
       'models':model_lock(),'device':settings.device,'dtype':settings.dtype,
       'max_input_tokens':settings.max_input_tokens,'max_new_tokens':settings.max_new_tokens,
       'max_rereads':settings.max_rereads,'document_timeout_seconds':settings.document_timeout_seconds,
-      'visual_verifier':False,'visual_evaluation':'separate blinded F04 exam; not part of A0/A1/A3/A4',
+      'visual_verifier':False,'reading_policy':'legacy','rescue_text_detector':'none',
+      'max_detector_rescues':0,
+      'visual_evaluation':'separate blinded F04 exam; not part of A0/A1/A3/A4',
       'metric':'exact raw literal; no normalization or reference correction',
       'group_unit':'original_id','quality_qualified':False,'fixture':backend is not None}
     protocol['protocol_sha256']=digest(protocol);write_json(output/'protocol.json',protocol)
