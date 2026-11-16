@@ -1,6 +1,7 @@
 from __future__ import annotations
 import time
 import hashlib
+import io
 from pathlib import Path
 from ..util import digest
 
@@ -31,7 +32,7 @@ class HFReaders:
         path=str(self.settings.models_dir/name)
         dtype=getattr(self.torch,self.settings.dtype)
         model=AutoModelForImageTextToText.from_pretrained(path,local_files_only=True,
-              trust_remote_code=False,torch_dtype=dtype,attn_implementation='eager',low_cpu_mem_usage=True)
+              trust_remote_code=False,torch_dtype=dtype,attn_implementation=self.settings.attention_backend,low_cpu_mem_usage=True)
         self.models[name]=model.eval().to(self.settings.device)
         if name=='xiaomi':
             self.processors[name]=AutoProcessor.from_pretrained(path,local_files_only=True,
@@ -50,6 +51,8 @@ class HFReaders:
     def generate(self,name,inputs,max_new_tokens,prefix_constraint=None):
         model=self.models[name]; torch=self.torch; start=time.perf_counter()
         inputs={k:v.to(self.settings.device) if hasattr(v,'to') else v for k,v in inputs.items()}
+        input_devices={k:str(v.device) for k,v in inputs.items() if hasattr(v,'device')}
+        input_dtypes={k:str(v.dtype) for k,v in inputs.items() if hasattr(v,'dtype')}
         n=int(inputs['input_ids'].shape[-1])
         if n>self.settings.max_input_tokens: raise ValueError('templated_input_token_limit')
         if self.settings.device=='cuda': torch.cuda.reset_peak_memory_stats()
@@ -78,16 +81,32 @@ class HFReaders:
                 'input_ids_sha256':digest(inputs['input_ids'].detach().cpu().tolist()),
                 'model_id':name,'device':self.settings.device,'dtype':self.settings.dtype,
                 'peak_cuda_allocated_bytes':torch.cuda.max_memory_allocated() if self.settings.device=='cuda' else None,
+                'peak_cuda_reserved_bytes':torch.cuda.max_memory_reserved() if self.settings.device=='cuda' else None,
+                'input_tensor_devices':input_devices,'input_tensor_dtypes':input_dtypes,
+                'effective_parameter_devices':sorted({str(p.device) for p in model.parameters()}),
                 'effective_parameter_dtypes':sorted({str(p.dtype) for p in model.parameters()}),
                 'fresh_generation_state':True,'thinking_enabled':False,
                 'json_constraint_applied':prefix_constraint is not None,
                 'effective_eos_token_ids':eos_ids,
                 'cpu_thread_configuration':self.thread_configuration}
-    def ocr(self,path,max_new_tokens=None):
+    def ocr(self,path,max_new_tokens=None,expected_image_sha256=None):
         from PIL import Image,ImageOps
-        self.load('xiaomi'); processor=self.processors['xiaomi']
-        with Image.open(path) as opened:
+        from .vision import _bytes
+        if expected_image_sha256 is None:
+            with Path(path).open('rb') as stream:
+                data=stream.read(self.settings.max_upload_bytes+1)
+            if len(data)>self.settings.max_upload_bytes:raise ValueError('ocr_image_byte_limit')
+            actual_sha=hashlib.sha256(data).hexdigest()
+        else:
+            data=_bytes(path,expected_image_sha256,limit=self.settings.max_upload_bytes)
+            actual_sha=expected_image_sha256
+        # The exact bytes checked above, not a second open of a mutable path,
+        # are the source of every pixel sent to the model.
+        with Image.open(io.BytesIO(data)) as opened:
+            if opened.width*opened.height>self.settings.max_page_pixels:
+                raise ValueError('ocr_image_pixel_limit')
             image=ImageOps.exif_transpose(opened).convert('RGB')
+        self.load('xiaomi'); processor=self.processors['xiaomi']
         original=list(image.size); scale=min(1.,(589824/(image.width*image.height))**.5,1536/max(image.size))
         if scale<1: image=image.resize((max(1,int(image.width*scale)),max(1,int(image.height*scale))))
         messages=[{'role':'user','content':[{'type':'image','image':image},
@@ -96,6 +115,8 @@ class HFReaders:
         inputs=processor(text=[prompt],images=[image],return_tensors='pt')
         out=self.generate('xiaomi',inputs,max_new_tokens or self.settings.max_new_tokens)
         out['image_preprocess']={'source_size':original,'actual_size':list(image.size),'uniform_scale':scale}
+        out['input_image_sha256']=actual_sha
+        out['input_image_expected_sha_verified']=expected_image_sha256 is not None
         return out
     def select(self,name,prompt,max_new_tokens=None,purpose='selector'):
         from .constraints import build_prefix_constraint,TokenizerDataCache
@@ -107,11 +128,15 @@ class HFReaders:
                      'Abstain when the available observations cannot decide. Never invent evidence.'}
         if purpose not in instructions:raise ValueError('unsupported_qwen_purpose')
         self.load(name); tok=self.tokenizers[name]
-        if self.constraint_cache is None:self.constraint_cache=TokenizerDataCache(max_entries=2)
-        constraint=build_prefix_constraint(tok,prompt,purpose=purpose,cache=self.constraint_cache)
         rendered=tok.apply_chat_template([{'role':'system','content':instructions[purpose]},
             {'role':'user','content':prompt}],tokenize=False,add_generation_prompt=True,enable_thinking=False)
         inputs=tok(rendered,return_tensors='pt')
+        # Reject the full chat-template token count before building the costly
+        # vocabulary trie/JSON constraint. generate() also checks this limit.
+        if int(inputs['input_ids'].shape[-1])>self.settings.max_input_tokens:
+            raise ValueError('templated_input_token_limit')
+        if self.constraint_cache is None:self.constraint_cache=TokenizerDataCache(max_entries=2)
+        constraint=build_prefix_constraint(tok,prompt,purpose=purpose,cache=self.constraint_cache)
         out=self.generate(name,inputs,max_new_tokens or self.settings.max_new_tokens,prefix_constraint=constraint)
         out.update(response_schema_sha256=constraint.response_schema_sha256,
                    constraint_engine=constraint.constraint_engine,

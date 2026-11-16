@@ -2,3 +2,4 @@
 src/harness_ocr/native/data/*.xsd -text
 src/harness_ocr/data/bank_key_sources.json -text
 src/harness_ocr/data/machine_id_sources.json -text
+*.sh text eol=lf

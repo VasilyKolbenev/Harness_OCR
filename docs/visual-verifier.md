@@ -80,6 +80,14 @@ execution as accepted.
 
 ## Production verification behavior
 
+In 0.1.0rc5 the default `adaptive` reading policy plans verification from the
+actual value spans of every live supported claim. It separates value sources,
+role-only evidence and supporting corroboration. A whole-page OCR reading that
+only corroborates a locally sourced value remains evidence; it is not silently
+labelled as visually verified and does not force a full-page field check. If the
+value itself has only an unlocalized whole-page source, verification remains
+incomplete and the field requires review.
+
 The first stage transcribes the full approved ROI literally, without a proposed
 answer. The second stage compares the sealed optical literal deterministically
 using `exact-v1`. Spaces, punctuation, digits and line breaks are preserved;
@@ -88,9 +96,30 @@ replacement of a prior OCR value or human correction. A full line containing a
 label is compared as a full line. It does not become a value-only ROI through
 text matching.
 
+For a scalar value composed from several complete source observations, the
+server may construct one real bounding union on the same horizontal baseline and source page and
+compare the complete, ordered literal join. Every fragment and its original
+pixel geometry must be present. Character offsets do not become pixel offsets;
+partial-line spans, duplicate readings of the same pixels, different pages,
+conflicts or unlocalized sources cannot claim this union proof. Each failed or
+deferred required span stays explicit. The default budget is two unique ROI
+descriptors, shared captures do not create independent observations, and matching
+a subset cannot mark full value coverage as complete.
+
 `correct` means optical literal concordance within that comparison scope. It
 does not verify the field's semantic role or authorize acceptance. Disagreement
 and abstention remain in document history and request review. Human corrections
 remain explicit revisions. Existing validation, conflicts, runtime binding and
 risk-policy checks continue to apply. `HARNESS_VISUAL_VERIFIER=1` enables the
 bounded production hook; the Compose candidate enables it by default.
+
+`HARNESS_READING_POLICY=legacy` retains the previous full-original-observation
+verification behavior. Reading policy, verification scope and limits are part
+of the runtime binding. The synthetic diagnostic above is a functional check of
+blind capture and comparison; it does not qualify the new adaptive planner's
+accuracy or resource usage. Those measurements and target GPU qualification
+remain pending.
+
+Vertical components are checked as separate original ROIs. A page-sized field crop cannot bypass the explicit whole-page reading budget. Value coverage replays the semantic span reconstruction as well as capture checks.
+
+Server-authored context and value-union rectangles use exact upright axis-aligned source crops. A tall context rectangle is not rotated using the detector line-rectification heuristic; the blind verifier reconstructs its bbox pixels independently.

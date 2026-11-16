@@ -1,11 +1,29 @@
 name: harness-ocr
 services:
+  lease-init:
+    image: ${HARNESS_IMAGE:-harness-ocr:0.1.0rc6}
+    user: "0:0"
+    entrypoint: ["python", "/app/scripts/init_shared_locks.py"]
+    command: ["--lock-dir", "/locks"]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - harness_device_locks:/locks
+    restart: "no"
   ocr:
-    image: harness-ocr:0.1.0rc4
+    image: ${HARNESS_IMAGE:-harness-ocr:0.1.0rc6}
+    user: "${HARNESS_UID:-10001}:${HARNESS_GID:-10001}"
+    depends_on:
+      lease-init:
+        condition: service_completed_successfully
     build:
       context: .
       args:
         PYTHON_IMAGE: ${HARNESS_PYTHON_IMAGE:-python:3.12.16-slim-bookworm@sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4}
+        HARNESS_INSTALL_YOLO: ${HARNESS_INSTALL_YOLO:-0}
     platform: linux/amd64
     init: true
     restart: unless-stopped
@@ -20,6 +38,16 @@ services:
       HARNESS_DEVICE: cuda
       HARNESS_DTYPE: bfloat16
       HARNESS_QWEN: ${HARNESS_QWEN:-qwen-0.8b}
+      HARNESS_TEXT_DETECTOR: ${HARNESS_TEXT_DETECTOR:-db}
+      HARNESS_READING_POLICY: ${HARNESS_READING_POLICY:-adaptive}
+      HARNESS_RESCUE_TEXT_DETECTOR: ${HARNESS_RESCUE_TEXT_DETECTOR:-none}
+      HARNESS_MAX_DETECTOR_RESCUES: "${HARNESS_MAX_DETECTOR_RESCUES:-1}"
+      HARNESS_MAX_WHOLE_PAGE_READS: "${HARNESS_MAX_WHOLE_PAGE_READS:-1}"
+      HARNESS_MAX_INPUT_TOKENS: "${HARNESS_MAX_INPUT_TOKENS:-32768}"
+      HARNESS_MAX_NEW_TOKENS: "${HARNESS_MAX_NEW_TOKENS:-1024}"
+      HARNESS_CALL_TIMEOUT_SECONDS: "${HARNESS_CALL_TIMEOUT_SECONDS:-300}"
+      HARNESS_DOCUMENT_TIMEOUT_SECONDS: "${HARNESS_DOCUMENT_TIMEOUT_SECONDS:-900}"
+      HARNESS_ATTENTION_BACKEND: ${HARNESS_ATTENTION_BACKEND:-sdpa}
       HARNESS_VISUAL_VERIFIER: ${HARNESS_VISUAL_VERIFIER:-1}
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
@@ -30,6 +58,7 @@ services:
         target: /models
         read_only: true
       - harness_data:/var/lib/harness
+      - harness_device_locks:/var/lib/harness/locks
       - harness_reports:/reports
     read_only: true
     tmpfs:
@@ -47,5 +76,8 @@ services:
               device_ids: ["${HARNESS_GPU_ID:-0}"]
               capabilities: [gpu]
 volumes:
+  harness_device_locks:
+    external: true
+    name: ${HARNESS_LOCK_VOLUME:-harness-ocr-device-locks}
   harness_data:
   harness_reports:

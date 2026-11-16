@@ -58,7 +58,11 @@ class Rc3IntegrationTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
     def tearDown(self):self.temp.cleanup()
     def settings(self,visual=False):
-        return Settings(self.root/'state',self.root/'models',device='cpu',dtype='float32',visual_verifier=visual)
+        # RC3 fixtures deliberately replay the old complete-observation scope,
+        # including whole-page observations. Adaptive value-span coverage is
+        # exercised separately with actual localized crops.
+        return Settings(self.root/'state',self.root/'models',device='cpu',dtype='float32',
+            visual_verifier=visual,reading_policy='legacy')
     def frozen(self,settings,text):
         from PIL import Image
         path=self.root/'source.png';Image.new('RGB',(320,80),'white').save(path)

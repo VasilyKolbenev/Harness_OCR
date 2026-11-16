@@ -1,0 +1,49 @@
+sequenceDiagram
+    actor Colleague as Коллега
+    participant Host as Host launcher
+    participant Docker as Одноразовые Docker services
+    participant Locks as Общий device-lock volume
+    participant Coordinator as GPU delivery coordinator
+    participant Worker as Свежий Supervisor и Engine
+    participant Reports as Приватные host reports
+    participant Export as Allowlist exporter
+    Colleague->>Host: Явный profile или manifest, новый output, optional gold
+    Host->>Host: Проверить пути, ID, scalar gold и сохранить private input map
+    Host->>Docker: Проверить активные OCR и GPU-привязку
+    Note over Host,Docker: При пересечении или неизвестной GPU остановку выполняет оператор
+    Host->>Docker: Build YOLO image и pin фактического image ID
+    Host->>Locks: Создать общий volume, если отсутствует
+    Host->>Docker: lock-init root только с mounts /locks, без сети и GPU
+    Docker->>Locks: Проверить пять fixed inodes и права, ничего не unlink
+    Host->>Coordinator: Metadata plan без NN и без требования готовых весов
+    opt Есть отдельный gold
+        Coordinator->>Coordinator: Проверить schema, IDs, requested scalar fields
+        Note over Coordinator,Worker: Эталонные значения и путь не входят в worker specs
+    end
+    Coordinator-->>Reports: plan.json
+    Host->>Docker: prepare service с сетью, только выбранные pinned models
+    Host->>Docker: Offline verify и doctor с BF16 kernel
+    Host->>Docker: GPU smoke, модели последовательно
+    Docker->>Locks: gpu-delivery lease и admission/compute leases
+    Docker-->>Reports: smoke/report.json и подтверждение закрытия owners
+    Note over Docker,Reports: Только smoke/comparison используют host PID для own-PID NVML attribution
+    Host->>Coordinator: Execute adaptive matrix с замороженным протоколом
+    Coordinator->>Locks: Удерживать gpu-delivery.lock на весь sweep
+    loop Каждый запланированный document и arm, без retry
+        Coordinator->>Worker: Только документ, профиль, caps, model/source pins
+        Worker->>Locks: Admission родителя и compute lease worker
+        Worker->>Worker: DB/CTC, адресный Xiaomi, optional YOLO, Qwen, строгие проверки
+        Worker-->>Reports: Result, trace, state и измерения
+        Worker->>Locks: Закрыть owner и освободить его leases
+        Worker-->>Coordinator: Статус и подтверждение cleanup
+    end
+    opt Есть отдельный gold и доступен остаток бюджета
+        Coordinator->>Coordinator: Дословная оценка после workers, без исправлений
+    end
+    Coordinator-->>Reports: summary.json и status.json, включая missing/partial
+    Coordinator->>Locks: Освободить sweep lease
+    Host->>Reports: handoff-status.json
+    Host->>Export: Выполнить также при fail/interrupted/partial
+    Export->>Reports: Только разрешённые counts, hashes и ресурсы
+    Export-->>Colleague: RETURN_TO_TEAM.zip и HTML/CSV/public JSON
+    Note over Colleague,Reports: Приватные документы, gold, строки OCR, protocol и logs остаются на хосте

@@ -151,7 +151,11 @@ class EngineTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)
-        self.settings = Settings(self.path / "data", self.path / "models", device="cpu", dtype="float32")
+        # These regression scenarios deliberately exercise the legacy selector
+        # and its injected failure/cancellation contracts. Adaptive scheduling
+        # has separate tests and does not call a selector for a proven value.
+        self.settings = Settings(self.path / "data", self.path / "models", device="cpu", dtype="float32",
+                                 reading_policy="legacy")
 
     def run_engine(self, backend=None, *, shared=None, **kwargs):
         engine = Engine(self.settings, backend or FakeBackend())

@@ -187,6 +187,26 @@ class HandoffTests(unittest.TestCase):
                 build_release.build_release(output, root)
             self.assertFalse(output.exists())
 
+    def test_gpu_handoff_entrypoints_and_unix_modes_survive_source_zip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'source'
+            entries = ('scripts/gpu_handoff.sh', 'scripts/gpu_handoff.py',
+                       'scripts/export_gpu_delivery.py', 'compose.gpu-handoff.yaml',
+                       'experiments/gpu_delivery/run.py', 'experiments/gpu_delivery/README.txt',
+                       'docs/delivery-sequence.mmd')
+            for name in entries:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('controlled-source-fixture\n', encoding='utf-8')
+            output = Path(directory) / 'source.zip'
+            build_release.build_release(output, root)
+            with zipfile.ZipFile(output) as archive:
+                for name in entries:
+                    info = archive.getinfo('harness-ocr/' + name)
+                    self.assertEqual(info.create_system, 3)
+                    expected = 0o100755 if name.endswith('.sh') else 0o100644
+                    self.assertEqual(info.external_attr >> 16, expected)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,12 +1,26 @@
 Harness OCR third-party component references
 
 This source handoff contains no model weights. Model revisions and per-file hashes
-are in src/harness_ocr/data/model_lock.json, SHA256 of that exact manifest:
-  d629e2f5d5b282b0ebbeacf4b1e0783a12859686ee921694fb6e048333e0c1e9
+are in src/harness_ocr/data/model_lock.json. The source archive records its hash.
 Source archive source-manifest.json records every included source file's SHA256.
-The model lock declares Apache-2.0 for the five model repositories below. Review
+The model lock declares Apache-2.0 for the five baseline HF repositories below. Review
 the upstream license and notices when obtaining or redistributing their weights;
 this reference list does not replace those license texts or grant new rights.
+
+Optional experimental YOLO26-L/X Text detection (not enabled by default):
+  https://github.com/ultralytics/assets/releases/tag/v8.4.0
+  yolo26l-text.pt release asset 730438472, SHA256:
+    b94c9e189c79135c260c72855868d84c517561dec36b3a955bfde55bcce52563
+  yolo26x-text.pt release asset 730445523, SHA256:
+    0188cafce4a221539a18232970fce8d668155d7458bd3fc3400c36c2f607d6c6
+  Upstream model/runtime license: AGPL-3.0; Ultralytics also offers an Enterprise
+  license. This optional integration does not assert proprietary deployment rights.
+  https://www.ultralytics.com/license
+  https://github.com/ultralytics/ultralytics/blob/v8.4.211/LICENSE
+  Upstream license text is included in LICENSES/Ultralytics-AGPL-3.0.txt.
+  The official headless distribution is used to avoid conflicting cv2 packages:
+  https://docs.ultralytics.com/quickstart/#headless-server-installation
+  Direct optional dependency pins are in pyproject.toml [project.optional-dependencies].
 
 Xiaomi-OCR-0
   https://huggingface.co/xiaomi-research/Xiaomi-OCR-0

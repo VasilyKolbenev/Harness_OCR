@@ -1,4 +1,7 @@
-"""Run one sequential four-arm benchmark on the target GPU, then check coverage.
+"""Legacy shared-optics four-arm benchmark; not current adaptive acceptance.
+
+For the shipped adaptive pipeline use scripts/gpu_handoff.sh and
+experiments.gpu_delivery.run, which preserve visual verification and rescue.
 
 Stop the HTTP service first: benchmark and service must never own models at once.
 This records execution acceptance separately from still-unqualified OCR quality.

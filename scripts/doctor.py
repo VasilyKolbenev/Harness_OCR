@@ -101,7 +101,9 @@ def request_ready(base_url, token=None):
 
 
 def run_doctor(models_dir, *, names=None, expected_capability=(12, 0),
-               min_driver="595.71.05", base_url=None):
+               min_driver="595.71.05", base_url=None, offline=False):
+    if type(offline) is not bool or (offline and base_url):
+        raise ValueError('offline_doctor_cannot_check_api')
     names = names or ["xiaomi", "qwen-0.8b", "qwen-4b", "detector", "cyrillic"]
     checks = []
     def add(name, status, detail):
@@ -146,7 +148,9 @@ def run_doctor(models_dir, *, names=None, expected_capability=(12, 0),
             {"returncode": child.returncode})
     except (Exception, subprocess.TimeoutExpired) as exc:
         add("dependency_consistency", "fail", {"error_type": type(exc).__name__})
-    if base_url:
+    if offline:
+        add("api_readiness", "skipped", "Offline batch deployment: HTTP API is not part of this check")
+    elif base_url:
         try:
             ready = request_ready(base_url, os.getenv("HARNESS_API_TOKEN"))
             # Readiness endpoint is responsible for actual weights/runtime status;
@@ -164,6 +168,8 @@ def run_doctor(models_dir, *, names=None, expected_capability=(12, 0),
             "status": status, "checks": checks,
             "quality_qualified": False, "model_generation_performed": False,
             "image_digest_verified": False,
+            "mode": "offline_environment" if offline else "service_environment",
+            "api_checked":bool(base_url) and not offline,
             "note": "Preflight only. Actual model smoke, paired benchmark and independent quality gates remain separate."}
 
 
@@ -174,13 +180,16 @@ def main(argv=None):
     parser.add_argument("--expected-capability", default="12.0")
     parser.add_argument("--min-driver", default="595.71.05")
     parser.add_argument("--base-url")
+    parser.add_argument("--offline", action="store_true", help="Check the offline batch environment without claiming HTTP readiness")
     parser.add_argument("--output")
     args = parser.parse_args(argv)
+    if args.offline and args.base_url:
+        parser.error('--offline and --base-url are mutually exclusive')
     capability = tuple(int(n) for n in args.expected_capability.split("."))
     if len(capability) != 2:
         parser.error("--expected-capability needs major.minor")
     report = run_doctor(args.models, names=args.names, expected_capability=capability,
-                        min_driver=args.min_driver, base_url=args.base_url)
+                        min_driver=args.min_driver, base_url=args.base_url, offline=args.offline)
     write_report(args.output, report)
     print(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False))
     return {"pass": 0, "fail": 1, "pending": 2}[report["status"]]
