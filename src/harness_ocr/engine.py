@@ -530,9 +530,33 @@ class Engine:
         result['all_required_fields_validated']=bool(required) and not contract['unknown_conditionals'] and all(
             fields[k]['extraction_status']=='observed' and fields[k]['validation_status']=='pass'
             and not fields[k].get('needs_review') for k in required)
+        # Post-inference literal quality: no OCR, replacement or new candidate.
+        # Raw/extraction/business validator outputs remain unchanged; review
+        # stays mandatory even if a server gateway would otherwise accept.
+        from .name_quality import name_script_uncertainty
+        quality_review_fields=[]
+        for key,value in fields.items():
+            if value['extraction_status']=='not_applicable':continue
+            signal=name_script_uncertainty(value.get('raw_value'),contract['field_definitions'][key])
+            if signal is None:continue
+            value['name_quality_signal']=signal
+            value['quality_review_required']=True
+            value['needs_review']=True
+            quality_review_fields.append(key)
+            reason=('unicode_name_quality_check_incomplete' if signal['check_status']=='incomplete'
+                    else 'unicode_name_script_uncertainty')
+            review_reasons=[*review_reasons,reason+':'+key]
         # Qualification/configuration and ranking features come from the trusted
         # server gateway; callers cannot enable acceptance with flags or scores.
         result.update(self.gateway.apply(result,binding))
+        quality_required=sorted(set(required)&set(quality_review_fields))
+        if quality_required:
+            # Format pass does not imply supported-complete required content.
+            # A permissive gateway cannot restore aggregate readiness.
+            result['all_required_fields_validated']=False
+            result['completion_report']={**result['completion_report'],
+                'contract_complete':False,'requires_review':True,
+                'quality_review_required_fields':quality_required}
         if any(f.get('origin')=='human' for f in fields.values()):
             # Machine-qualified risk is not qualification of an operator's new
             # literal. Preserve the correction; the separate human acceptance
