@@ -1,0 +1,111 @@
+# Standalone offline delivery; do not combine with compose.yaml.
+services:
+  handoff:
+    image: ${HARNESS_HANDOFF_IMAGE:-harness-ocr:gpu-rc6-yolo}
+    build:
+      context: .
+      args:
+        HARNESS_INSTALL_YOLO: "1"
+    platform: linux/amd64
+    init: true
+    user: "${HARNESS_RUN_UID:?}:${HARNESS_RUN_GID:?}"
+    entrypoint: ["/bin/sh", "-c", "umask 0077; exec \"$$@\"", "--"]
+    network_mode: none
+    healthcheck: {disable: true}
+    environment:
+      HOME: /tmp
+      HARNESS_DEVICE: cuda
+      HARNESS_DTYPE: bfloat16
+      HARNESS_ATTENTION_BACKEND: sdpa
+      HARNESS_MODELS: /models
+      HARNESS_DATA: /reports/runtime
+      HARNESS_LOCK_DIR: /locks
+      HARNESS_READING_POLICY: adaptive
+      HARNESS_RESCUE_TEXT_DETECTOR: none
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      OMP_NUM_THREADS: "4"
+    volumes:
+      - type: bind
+        source: ${HARNESS_MODELS_HOST:?}
+        target: /models
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HARNESS_REPORTS_HOST:?}
+        target: /reports
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HARNESS_INPUT_HOST:?}
+        target: /input
+        read_only: true
+        bind:
+          create_host_path: false
+      - device-locks:/locks
+    read_only: true
+    tmpfs: ["/tmp:size=2147483648,mode=1777"]
+    shm_size: 2gb
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 512
+    stop_grace_period: 30s
+    depends_on:
+      lock-init:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${HARNESS_GPU_ID:-0}"]
+              capabilities: [gpu]
+  measured:
+    extends:
+      service: handoff
+    # NVML reports host PIDs. Only temporary smoke/comparison use this service;
+    # ResourceSampler associates them with its own psutil process tree.
+    pid: host
+  prepare:
+    image: ${HARNESS_HANDOFF_IMAGE:-harness-ocr:gpu-rc6-yolo}
+    platform: linux/amd64
+    init: true
+    user: "${HARNESS_RUN_UID:?}:${HARNESS_RUN_GID:?}"
+    entrypoint: ["/bin/sh", "-c", "umask 0077; exec \"$$@\"", "--"]
+    network_mode: bridge
+    healthcheck: {disable: true}
+    environment:
+      HOME: /tmp
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    volumes:
+      - type: bind
+        source: ${HARNESS_MODELS_HOST:?}
+        target: /models
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs: ["/tmp:size=536870912,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  lock-init:
+    image: ${HARNESS_HANDOFF_IMAGE:-harness-ocr:gpu-rc6-yolo}
+    platform: linux/amd64
+    user: "0:0"
+    entrypoint: ["python", "/app/scripts/init_shared_locks.py", "--lock-dir", "/locks"]
+    command: []
+    network_mode: none
+    healthcheck: {disable: true}
+    volumes: [device-locks:/locks]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+volumes:
+  device-locks:
+    external: true
+    name: ${HARNESS_LOCK_VOLUME:-harness-ocr-device-locks}

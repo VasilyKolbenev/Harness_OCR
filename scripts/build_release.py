@@ -14,7 +14,7 @@ import re
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-ROOT_NAMES = {"Dockerfile", "compose.yaml", "pyproject.toml", ".dockerignore", ".gitignore", ".gitattributes", "LICENSE.txt", "THIRD_PARTY_NOTICES.txt"}
+ROOT_NAMES = {"Dockerfile", "compose.yaml", "compose.gpu-handoff.yaml", "pyproject.toml", ".dockerignore", ".gitignore", ".gitattributes", "LICENSE.txt", "THIRD_PARTY_NOTICES.txt"}
 EXCLUDED = {"__pycache__", ".git", ".venv", "models", "var", "reports", "outputs", "dist"}
 SECRET = re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|hf_[A-Za-z0-9]{24,}")
 
@@ -35,15 +35,16 @@ def allowed(path):
         return path.name in {"base-image-lock.json","actions-lock.json"}
     if parts[0] == "LICENSES":
         return path.name in {"Apache-2.0.txt","lm-format-enforcer-MIT.txt","Ultralytics-AGPL-3.0.txt"}
-    if parts[:2] == ('experiments', 'yolo26'):
-        return len(parts) == 3 and path.suffix in {'.py', '.md', '.json'}
+    if parts[:2] in {('experiments', 'yolo26'), ('experiments', 'gpu_delivery')}:
+        return len(parts) == 3 and path.suffix in {'.py', '.md', '.txt', '.json'}
     if parts[0] == "examples":
         return path.name == "runtime_policy.disabled.json"
     if parts[0] == "docs":
         return path.suffix in {".md",".txt",".json",".mmd",".svg"}
     if len(parts)>2 and parts[0:2]==('.github','workflows'):
         return path.suffix in {'.yml','.yaml'}
-    return parts[0] in {"tests", "scripts"} and path.suffix == ".py"
+    return (parts[0] in {"tests", "scripts"} and path.suffix == ".py"
+            or parts == ('scripts','gpu_handoff.sh'))
 
 
 def build_release(output, root=ROOT):
@@ -72,7 +73,8 @@ def build_release(output, root=ROOT):
     with zipfile.ZipFile(output, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for name, data in files:
             info = zipfile.ZipInfo("harness-ocr/" + name, date_time=(2026, 11, 11, 0, 0, 0))
-            info.external_attr = 0o100644 << 16
+            info.create_system = 3  # Preserve Unix modes even when built on Windows.
+            info.external_attr = (0o100755 if name=='scripts/gpu_handoff.sh' else 0o100644) << 16
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, data)
     digest = hashlib.sha256(output.read_bytes()).hexdigest()

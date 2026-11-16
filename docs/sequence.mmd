@@ -1,4 +1,5 @@
 sequenceDiagram
+    %% RC6 offline delivery is documented separately in delivery-sequence.mmd.
     actor Client as Пакетный клиент / HTTP / MCP
     participant API as HTTP сервис
     participant Jobs as Очередь SQLite
@@ -8,7 +9,7 @@ sequenceDiagram
     participant Worker as Изолированный воркер моделей
     participant Gate as Доказательства, валидаторы и политика
     Note over Reader,Worker: Контекстный bbox сохраняет ориентацию страницы; созданный crop не перечитывает сам себя
-    Note over Client: rc5: manifest без gold; задания последовательно; качество ещё требует квалификации
+    Note over Client: rc6: HTTP/MCP path; manifest без gold; offline delivery имеет отдельную sequence
     Client->>API: Загрузить файл и создать задание по явному профилю
     API-->>Client: artifact_id, SHA и job_id
     API->>Jobs: Сохранить queued

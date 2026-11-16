@@ -24,8 +24,8 @@ def main():
     bench.add_argument('--no-controller',action='store_true')
     for command in [infer,bench]:
         command.add_argument('--models',type=Path,required=True);command.add_argument('--device',choices=['cpu','cuda'],default='cuda')
-        command.add_argument('--max-new-tokens',type=int,default=1024);command.add_argument('--call-timeout',type=float,default=120)
-        command.add_argument('--document-timeout',type=float,default=600)
+        command.add_argument('--max-new-tokens',type=int,default=None);command.add_argument('--call-timeout',type=float,default=None)
+        command.add_argument('--document-timeout',type=float,default=None)
         command.add_argument('--reading-policy',choices=['adaptive','legacy'],default=None)
         command.add_argument('--rescue-text-detector',choices=['none','yolo26l','yolo26x'],default=None,
             help='Optional sequential second detector; requires prepared weights and optional YOLO runtime')
@@ -85,12 +85,19 @@ def main():
         from .mcp_server import main as run
         run();return
     print(json.dumps(value,ensure_ascii=False,indent=2))
+    if args.command in {'prepare-models','verify-models'}:
+        return 0 if value.get('ok') is True else 1
+    if args.command=='infer':
+        return 0 if value.get('completed') is True and value.get('terminal_status')=='completed' else 1
+    return 0
 
 def _settings(args,data_dir):
     settings=Settings.from_env()
     chosen=replace(settings,data_dir=Path(data_dir).resolve(),models_dir=args.models.resolve(),device=args.device,
-      dtype='float32' if args.device=='cpu' else 'bfloat16',max_new_tokens=args.max_new_tokens,
-      call_timeout_seconds=args.call_timeout,document_timeout_seconds=args.document_timeout,
+      dtype='float32' if args.device=='cpu' else 'bfloat16',
+      max_new_tokens=args.max_new_tokens if args.max_new_tokens is not None else settings.max_new_tokens,
+      call_timeout_seconds=args.call_timeout if args.call_timeout is not None else settings.call_timeout_seconds,
+      document_timeout_seconds=args.document_timeout if args.document_timeout is not None else settings.document_timeout_seconds,
       qwen=getattr(args,'qwen','qwen-0.8b'),
       text_detector=getattr(args,'text_detector',None) or settings.text_detector,
       reading_policy=getattr(args,'reading_policy',None) or settings.reading_policy,
@@ -102,4 +109,4 @@ def _settings(args,data_dir):
     chosen.validate()
     return chosen
 
-if __name__=='__main__':main()
+if __name__=='__main__':raise SystemExit(main())

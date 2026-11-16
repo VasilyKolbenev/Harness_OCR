@@ -1,281 +1,139 @@
-Харнесс OCR / Harness OCR — передача на Linux + NVIDIA GPU
-Версия исходников: 0.1.0rc4
+ХАРНЕСС OCR 0.1.0rc6 — передача для GPU-тестов
 
-СТАТУС
+Цель: без доработки кода проверить свои документы и сравнить единое адаптивное
+ядро DB/CTC + Xiaomi + Qwen с дополнительным YOLO. Это release candidate;
+успешный запуск не означает доказанную точность OCR или допуск к автозаполнению.
 
-Это единый исполняемый release candidate, а не уже аттестованный продовый движок.
-Программные контракты и настоящая CUDA-сборка с offline imports проверены
-в Linux CI. Фактическая работа Xiaomi/Qwen на RTX, задержки, VRAM и качество
-на новых примерах подтверждаются отдельно на целевой машине. Упаковка не переносит
-результаты старых экспериментов в обещания качества новой версии.
+ТРЕБОВАНИЯ
+Linux x86_64, Docker Engine + Compose v2, NVIDIA Container Toolkit, Python 3.12+
+на хосте — поддерживаемое требование этой поставки. Цель: RTX PRO 5000 Blackwell 48 GB,
+одна свободная карта. Хосту не нужны Torch, Transformers или Python-пакеты.
+Проверка doctor использует консервативный gate драйвера 595.71.05+ для точной
+сборки CUDA 13.2; это не универсальная минимальная версия всех CUDA 13-программ.
+Ориентир для первого запуска: 40 GB свободного диска под образ, веса и результаты;
+реальный расход зависит от Docker cache и числа документов. При первой сборке
+и загрузке моделей нужен интернет, при инференсе сеть контейнеров выключена.
 
-Состав: HTTP API и постоянные задания; контролируемый один процесс моделей;
-Xiaomi-OCR-0; альтернативное чтение кириллицы; геометрия и доказательства полей;
-Qwen 0.8B или 4B как выборщик подтверждённых кандидатов; ограниченное перечитывание;
-проверки, review и трассы; адаптивный контроллер; раздельные исследовательские
-инструменты. Корректные human-oracle данные никогда не включаются в обычный API.
+БЫСТРЫЙ СТАРТ
+  git clone --branch delivery/gpu-rc6 https://github.com/VasilyKolbenev/Harness_OCR.git
+  cd Harness_OCR
+  bash scripts/gpu_handoff.sh --input /absolute/path/to/documents --profile D07 --output "$PWD/reports/run-001"
 
-В source ZIP отсутствуют веса, .env, ноутбучные окружения, сканы, журналы запуска
-и персональные документы. Внутри source-manifest.json — перечень исходников и SHA.
-Все тестовые протокольные примеры вымышленные и не являются OCR-бенчмарком.
+D07 — платёжное извещение. Папка --input должна содержать только документы
+одного явно выбранного профиля, без вложенных папок и посторонних файлов.
+Для разных типов документов используйте --manifest (ниже). Исходные документы
+не копируются и не меняются. Поддерживаются обычные права 0600 текущего владельца.
+Каталог результатов создаётся с режимом 0700. Запускайте от пользователя, который
+читает файлы и имеет доступ к Docker; его UID/GID сохраняются в контейнерах.
+Не редактируйте документы/эталоны/модели во время прогона.
 
-ТРЕБОВАНИЯ К МАШИНЕ
+ЧТО КОМАНДА ДЕЛАЕТ САМА
+1. Проверяет входы, Docker/Compose и отсутствие OCR-сервиса на той же либо
+   неопределённой GPU, включая другой Compose project.
+2. Собирает CUDA-образ с YOLO и фиксирует фактический image ID.
+3. Готовит общий volume блокировок без удаления существующих блокировок.
+4. Проверяет профили, поля и план сравнения до загрузки больших весов.
+5. Скачивает только необходимые закреплённые модели и проверяет SHA256.
+6. Выполняет offline doctor и короткий настоящий GPU smoke: Xiaomi, Qwen text,
+   Qwen vision, DB/CTC и YOLO-L; с --include-yolo-x также YOLO-X.
+7. Последовательно сравнивает четыре варианта: Qwen 0.8B/4B × DB/DB+YOLO-L.
+   С --include-yolo-x добавляются ещё два варианта. В каждом сохраняются
+   Xiaomi, строгие проверки, слепая визуальная проверка и перечитывание.
+8. Даже при ошибке собирает RETURN_TO_TEAM.zip с безопасной сводкой и отчётом.
 
-Linux x86_64, Docker Engine и Compose v2 с NVIDIA Container Toolkit.
-Целевой GPU: RTX PRO 5000 Blackwell, compute capability 12.0, 48 GB.
-Для этого кандидата выбран консервативный release gate драйвера >=595.71.05.
-Это версия драйвера CUDA 13.2 Update 2, а не общий минимум совместимости CUDA13.
-Начальный ориентир — от32GB системной RAM и50GB свободного диска; реальные пики
-и пределы размера документов измеряются на целевой конфигурации.
+Xiaomi/Qwen работают на CUDA BF16, YOLO — CUDA FP32; DB и кириллический CTC
+остаются ONNX Runtime CPU. Время и память измеряются для всей связки.
 
-Официально проверены наличие тегов/колёс, а не их запуск на нашем GPU:
-  python:3.12.16-slim-bookworm
-  torch==2.15.0+cu132
-  torchvision==0.29.2+cu132
-  https://download.pytorch.org/whl/cu132
-cu132 обозначает ветку CUDA13.2. Микроверсия библиотек определяется фактически
-установленными зависимостями, а не названием индекса; doctor записывает их версии.
-Базовый linux/amd64 manifest закреплён реальным digest:
-  sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4
-Индекс tag и платформенный manifest получены из официального Docker Registry v2;
-SHA пересчитаны по сырым ответам. Метаданные — deployment/base-image-lock.json.
-Docker build и offline imports реально выполнены в GitHub Actions; это не
-GPU-инференс. Транзитивные зависимости не закреплены полным Linux wheels/hash lock; build freeze только описывает
-один установленный результат и сам по себе не гарантирует повторяемость сборки.
+По умолчанию сравнение ограничено 3 часами, smoke — 10 минутами, загрузка — 2 часами,
+сборка — 1 часом. Это отдельные бюджеты, а не общий трёхчасовой запуск. Изменение:
+  bash scripts/gpu_handoff.sh --input /docs --profile D07 --output "$PWD/reports/run-002" --total-seconds 14400 --smoke-seconds 900
+Если бюджет сравнения исчерпан, неполученные результаты явно отмечаются;
+автоматического перезапуска или зачёта отсутствующих полей как ошибок модели нет.
+Новому запуску всегда нужна новая --output. Веса из --models используются повторно.
+--skip-download запрещает загрузку и только проверяет готовый pinned cache.
+--prepare-only готовит окружение/веса и план, без нейронных вызовов.
+--qwen qwen-0.8b или --qwen qwen-4b ограничивает сравнение двумя вариантами.
+При этом скачивается и проверяется только выбранная Qwen; both по умолчанию
+использует обе. --include-yolo-x добавляет один вариант на каждую выбранную Qwen.
 
-Официальные источники:
-  https://raw.githubusercontent.com/docker-library/official-images/master/library/python
-  https://download.pytorch.org/whl/cu132/torch/
-  https://download.pytorch.org/whl/cu132/torchvision/
-  https://developer.nvidia.com/cuda/gpus
-  https://docs.nvidia.com/cuda/archive/13.2.2/cuda-toolkit-release-notes/index.html
-  https://docs.docker.com/compose/how-tos/gpu-support/
-  https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+СМЕШАННЫЕ ДОКУМЕНТЫ
+Создайте JSON рядом с файлами, указав profile_id и при необходимости subset:
+  {"schema_version":"harness-own-documents/1","documents":[
+    {"id":"payment-01","path":"payment.pdf","profile_id":"D07","subset":["payer.name"]},
+    {"id":"contract-01","path":"contract.png","profile_id":"D09"}
+  ]}
+Имена полей и ограничения профилей: docs/supported-documents.md.
+  bash scripts/gpu_handoff.sh --manifest /docs/manifest.json --output "$PWD/reports/mixed-001"
+Один файл — один документ; автоматического определения типа и разделения пачки нет.
+Не более 100 документов, каждый до 30 MiB (30 × 1024² байт).
+Для растрового тракта: до 10 страниц и лимит 12 млн пикселей на страницу.
+Нечитаемые, зашифрованные, неподдерживаемые входы отклоняются явно.
 
-СБОРКА И ЗАГРУЗКА ВЕСОВ (BASH, ИЗ КОРНЯ РАСПАКОВАННОГО ПРОЕКТА)
+КАК ПОМЕРИТЬ ТОЧНОСТЬ
+Без эталонов измеряются выполнение, покрытие полей, review, скорость и ресурсы;
+проверка формата реквизита сама по себе не доказывает правильность распознавания.
+Для точности добавьте отдельный --gold /docs/gold.json:
+  {"schema_version":"harness-gpu-delivery-gold/1","documents":{
+    "payment-01":{"payer.name":"Иванов Иван Иванович"}
+  }}
+Это пример структуры, не разметка реального документа. Указывайте дословный raw.
+Gold v1 поддерживает только скалярные строковые поля выбранного профиля/subset:
+непустые строки до 8192 символов, без нормализации пробелов, букв или цифр.
+Составные typed-поля нельзя подменять строкой; для них нужен отдельный контракт
+оценки. Значения gold не передаются моделям, не входят в manifest и возвратный ZIP.
+Неразмеченные документы и поля остаются без оценки, а не становятся ошибками.
+Формат и ссылки проверяются до скачивания весов; после начала нельзя менять gold.
+  bash scripts/gpu_handoff.sh --manifest /docs/manifest.json --gold /docs/gold.json --output "$PWD/reports/scored-001"
+Предпочтителен явный manifest со стабильными ID. При --input ID doc-0001 и далее
+назначаются по сортировке имён с учётом регистра; явно указанный файл --gold
+исключается. Карта в private-input-map.json приватна. Изменение набора файлов
+может сдвинуть ID, поэтому не переносите старую разметку на новый список вслепую.
 
-  nvidia-smi
-  docker compose version
-  export HARNESS_API_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-  export HARNESS_REVIEW_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-  export HARNESS_GPU_ID=0
-  mkdir -p models
-  docker compose build --pull
+ЧТО ПРИСЛАТЬ КОМАНДЕ
+  reports/run-001/RETURN_TO_TEAM.zip
+Внутри report.html, metrics.csv, summary-public.json (harness-gpu-return/1)
+и manifest.json с контрольными суммами (harness-gpu-return-manifest/1).
+HTML, CSV и public JSON также доступны рядом с архивом на хосте.
+Архив исключает исходники документов, распознанные значения, gold, промпты,
+трассы, сырые логи, исходные имена файлов, токены и дампы переменных окружения.
+Полные result/trace/logs остаются в приватной папке прогона; не пересылайте её
+целиком с реальными персональными данными. При fail ZIP тоже нужен: безопасная
+сводка укажет стадию сбоя. Дополнительно можно прислать краткое описание проблемы.
 
-Токены разные, обязательны при запуске, передаются через среду; не добавляйте их
-в Git/архив или в сообщения. Для перезапуска сохраните их в своём secret manager.
-Фактический build может выявить несовместимость зависимости; pip check включён.
+ВАЖНЫЕ ГРАНИЦЫ
+- Review — нормальный результат недостаточного доказательства. Значения не
+  исправляются по догадке и валидаторы не ослабляются ради лучшего процента.
+- Автоматическое принятие полей закрыто до независимой квалификации.
+- Сравнение использует новое adaptive-ядро; scripts/gpu_acceptance.py оставлен
+  для прежнего frozen-optics benchmark и не является этим новым запуском.
+- Официальные Qwen 0.8B/4B закреплены отдельно. Математический weight-edit Qwen
+  из предыдущей работы не перенесён в OCR скрытым патчем.
+- Модели не обучаются на документах коллеги автоматически.
+- Только временные smoke/comparison-контейнеры видят host PID для атрибуции NVML;
+  основной API изолирован. Неизвестный VRAM не превращается в 0; PyTorch
+  allocated/reserved и NVML process/device memory отражают разные величины.
+- Внешний volume harness-ocr-device-locks должен быть общим у всех запусков
+  на этой карте. Не меняйте --lock-volume ради обхода занятой карты.
+  Старый работающий OCR нужно штатно остановить; скрипт сам сервисы не гасит.
 
-Подготовка скачивает только файлы конкретных ревизий из model_lock.json и проверяет
-SHA каждого файла; это отдельная явная операция, не загрузка внутри запроса OCR:
-
-  docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
-    -v "$PWD/models:/models:rw" --entrypoint python ocr \
-    -m harness_ocr.cli prepare-models --models /models --download
-
-Все пять компонентов нужны для полного сравнения 0.8B/4B. Для переноса уже
-скачанных весов используйте --local-sources JSONpath: объект
-{"xiaomi":"/path/to/snapshot", "qwen-0.8b":"...", "qwen-4b":"...", ...}.
-Пути относятся к контейнеру и должны быть явно примонтированы read-only.
-В архиве лежат только манифесты, не13GB весов.
-
-ЗАПУСК И ДИАГНОСТИКА
-
+ДОПОЛНИТЕЛЬНЫЙ HTTP/MCP-РЕЖИМ
+Для сравнения он не нужен. После него можно запустить API из compose.yaml.
+Задайте разные HARNESS_API_TOKEN/HARNESS_REVIEW_TOKEN из хранилища секретов.
+Для HARNESS_UID/HARNESS_GID проверьте чтение models и запись в state/reports:
+права ранее созданных named volumes не меняются автоматически при смене UID.
+Создайте нужные каталоги и общий volume, затем:
+  docker volume create harness-ocr-device-locks
+  docker compose build
   docker compose up -d
-  docker compose logs --tail 100 ocr
-  docker compose exec ocr python scripts/doctor.py --models /models \
-    --base-url http://127.0.0.1:8080 --output /reports/doctor-001.json
+  docker compose exec ocr python scripts/doctor.py --models /models --base-url http://127.0.0.1:8080 --output /reports/doctor-api-001.json
+Подробнее: docs/deployment-readiness.md.
 
-doctor проверяет Linux/Python, реальные версии torch и CUDA, BF16 kernel на GPU,
-драйвер, SHA весов, pip check и readiness HTTP. Он не загружает модели и не
-доказывает качество распознавания. Без --base-url готовность API отмечается
-pending. Коды возврата:0 pass,1 fail,2 pending. JSON-файлы create-only: при
-повторе используйте новое имя. Просмотр результата:
+Архитектура: docs/architecture.md; последовательность: docs/sequence.mmd.
+Контракты 10 профилей / 96 полей: docs/supported-documents.md.
+Ограничения прошлой CPU-проверки: docs/rc5-quality-findings.md.
+Лицензии сторонних компонентов, включая YOLO: THIRD_PARTY_NOTICES.txt.
 
-  docker compose cp ocr:/reports/doctor-001.json ./doctor-001.json
-
-API слушает только localhost:8080; inference работает без скачиваний, с одним
-worker и read-only моделями. Модели не запускаются параллельно. Runtime данные
-в named volume harness_data, отчёты — harness_reports. Это защищённые данные:
-трассы и принятые документы могут содержать персональную информацию. Встроенная
-схема однопользовательская; multi-tenant RBAC/квоты/хранение требуют отдельного
-контракта. Интернет-прокси, SSO, TLS и политика удаления относятся к окружению.
-
-После независимого аудита Docker HEALTHCHECK проверяет authenticated readiness
-(ready=true, fixture=false), а не только liveness. На холодном старте предусмотрено
-180секунд start-period. Если процесс жив, но веса/инференс не готовы, контейнер
-будет unhealthy; статус и причина доступны через doctor/readiness.
-
-API и offline CLI используют общий HARNESS_LOCK_DIR=/var/lib/harness/locks.
-Воркер держит compute lease, поэтому после аварии scheduler новый процесс не
-запустит модели поверх ещё работающего осиротевшего воркера. Для внешнего процесса
-или другого контейнера на той же GPU примонтируйте тот же каталог leases: разные
-файловые namespaces не могут согласовать OS-lock автоматически. Подробности —
-docs/deployment-readiness.md.
-
-MCP-адаптер включён в полный Docker install. Подключение к вашему каталогу — stdio
-командой из работающего контейнера:
-  docker compose exec -T ocr python -m harness_ocr.cli mcp
-Он обращается к тому же authenticated HTTP API с analysis token. Инструменты:
-ocr_profiles, ocr_submit, ocr_status, ocr_result, ocr_cancel. Файл сначала загружается
-через POST /v1/artifacts; модель получает opaque artifact_id. Через MCP не выдаются
-произвольные пути, замена политик/весов и полномочия review/одобрения госуслуги.
-
-ПРОВЕРКА HTTP И РЕАЛЬНОГО ИНФЕРЕНСА
-
-Сначала получите реальные profile_id через CLI profiles / GET /v1/profiles.
-Примонтируйте контролируемый файл, разрешённый для тестирования:
-
-  docker compose run --rm --no-deps \
-    -v "$PWD/test-documents:/test-documents:ro" --entrypoint python ocr \
-    scripts/acceptance.py --base-url http://ocr:8080 \
-    --document /test-documents/example.png --profile YOUR_PROFILE_ID \
-    --qwen qwen-0.8b --output /reports/api-001.json
-
-Проверяются health, запрет без токена, SHA загрузки, очередь/завершение, result,
-trace и отмена отдельного задания. Отсутствующая ручная review-проверка даёт
-pending, даже если инференс завершился. Полный тест дополнительно требует
---review-json /test-documents/review.json, содержащий реальную авторизованную
-правку данного результата:
-
-  {"field_key":"actual.field", "raw_value":"literally observed text",
-   "evidence_ids":["real-existing-region-id"], "expected_revision":0}
-
-Номер ревизии и IDs берите из фактических result/trace; не придумывайте их.
-Скрипт проверяет запрет review для analysis token, успешную правку review token
-и отказ при повторе со старой ревизией. Автоматическая acceptance не предлагает
-значений полей и не подменяет ручную аннотацию. Гонка «завершилось до отмены»
-записывается pending, а не как доказанная работоспособность отмены.
-
-Для воспроизводимой проверки только lifecycle вместо --review-json можно явно
-указать --review-observed-field passport.number. Скрипт возьмёт ровно текущее
-raw_value, его реальные evidence_ids и revision из только что созданного result
-и повторно подтвердит тот же литерал. Если поле не прочитано, статус pending.
-Это проверка полномочий и revision CAS, не независимая human-аннотация качества.
-
-СРАВНЕНИЕ СВЯЗОК НА GPU
-
-Остановите API перед offline benchmark — у GPU должен быть один владелец.
-Не запускайте doctor/inference/benchmark параллельно ради скорости.
-
-  docker compose stop ocr
-
-Для первого запуска без внешнего корпуса можно создать русский DEV smoke:
-
-  docker compose run --rm --no-deps --entrypoint python ocr \
-    scripts/make_smoke_corpus.py --output /reports/synthetic-dev-001
-  docker compose run --rm --no-deps --entrypoint python ocr \
-    scripts/gpu_acceptance.py --manifest /reports/synthetic-dev-001/manifest.json \
-    --models /models --output /reports/smoke-bench-001 --seconds 3600 \
-    --report /reports/smoke-gpu-acceptance-001.json
-
-Это один вымышленный исходник с двумя коррелированными вариантами, а не пилот
-на реальных паспортах. Даже идеальные ответы не квалифицируют профиль.
-
-Подготовьте отдельный разрешённый dev либо blind manifest в benchmark-data:
-  {"schema_version":"harness-bench/1", "split":"blind",
-   "documents":[{"id":"doc-001", "original_id":"original-001",
-     "path":"/benchmark-data/doc-001.png", "profile_id":"YOUR_PROFILE_ID",
-     "gold":{"actual.field":"literal expected text"}}]}
-
-Это эталон для scorer, не данные модели. Варианты одного исходника должны иметь
-один original_id; на действительно независимых документах — разные IDs.
-Не смешивайте DEV с blind и не меняйте эталоны после просмотра ошибок.
-
-  docker compose run --rm --no-deps \
-    -v "$PWD/benchmark-data:/benchmark-data:ro" --entrypoint python ocr \
-    scripts/gpu_acceptance.py --manifest /benchmark-data/manifest.json \
-    --models /models --output /reports/bench-001 --seconds 14400 \
-    --report /reports/gpu-acceptance-001.json
-
-Запускается один sequential bench, четыре arm:
-A0 rules; A1 hybrid Qwen0.8B base; A3 Qwen4B base на matched OCR; A4 адаптивная стратегия.
-Обе Qwen здесь — официальные base-веса с точными SHA из model lock. Математический
-weight-edit предыдущего исследования не применён скрыто к OCR и не переносился
-на4B или в непроверенный CUDA runtime. Отдельный будущий A2 проверяет edited0.8B
-после фиксации patch/base SHA, воспроизводимого CUDA-переноса и независимого
-OCR-сравнения. Сейчас таких результатов нет; гибридное ядро Xiaomi+Qwen работает
-с исходными моделями и не меняет веса в ходе запросов.
-wrapper проверяет, что есть все arms, исходные группы, все запланированные строки
-и завершённые генерации. Частичные/ошибочные результаты не становятся pass.
-Фактические артефакты bench сохраняются в output/benchmark; SHA начальной оптики
-для каждой пары перепроверяются по сохранённым JSON, а fixture-запуски отвергаются.
-CLI bench хранит сырые наблюдения и метрики полей/документов, время и VRAM.
-Небольшой dev-набор и successful execution не дают production qualification:
-она остаётся false, а release_status pending до независимых quality/risk gates.
-
-РЕГИСТРАЦИЯ СБОРКИ И ПЕРЕДАЧА
-
-После успешного build и запуска на целевой машине сохраните:
-
-  docker image inspect harness-ocr:0.1.0rc4 --format '{{.Id}}'
-  docker buildx imagetools inspect python:3.12.16-slim-bookworm@sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4
-  docker compose run --rm --no-deps --entrypoint cat ocr /opt/harness-build.freeze.txt
-
-Фиксируйте реальный final image ID, базовый manifest и установленные версии;
-финальный registry digest появляется только после явной публикации образа.
-Базовый image@sha256 уже закреплён, но для повторяемой поставки нужны также
-полный wheels/hash lock и финальный проверенный image artifact после приёмки.
-
-Source ZIP можно пересобрать без окружений/секретов/документов:
-  python3 scripts/build_release.py --output ./harness-ocr-source-new.zip
-
-Он создаёт SHA inventory и отказывается перезаписывать существующий архив.
-Правила включения — allowlist, а не упаковка всей рабочей папки. Крупные модели
-передаются отдельно по pinned model lock. Не отправляйте var/, reports/, .env,
-сканы или защищённые трассы вместе с исходниками.
-
-ЧТО ЕЩЁ НУЖНО ДО ПРОДОВОГО СТАТУСА
-
-1. Реальный Docker build и BF16/model smoke на RTX, измерения p50/p95/VRAM/OOM.
-2. Независимые реальные русские документы каждого профиля; ошибки и abstain,
-   критические поля, источники/варианты и применимость полей считаются отдельно.
-3. Отдельная calibration для auto-accept; fail-closed/review по умолчанию.
-4. Нагрузочная/восстановительная проверка очереди, отмены, рестартов, PDF и лимитов.
-5. Полный Linux lock с hash, проверенный image digest, аудит зависимостей,
-   эксплуатационные retention/access/monitoring соглашения вашей инфраструктуры.
-
-Не обещаем «покрытие30–50документов» только на основании наличия контрактов.
-Область профилей и реально измеренное качество — разные артефакты.
-
-GITHUB CI
-
-.github/workflows/ci.yml запускает software-contracts на Ubuntu/Python3.12 при
-push/PR: установка .[inference,mcp], pip check, unittest, проверка source ZIP.
-Он не скачивает веса и не требует GPU. Реальный build CUDA Docker image
-автоматически запускается после успешных software-contracts для PR и push в main;
-также доступен ручной запуск с docker_build=true. Отдельный job собирает Dockerfile
-и выполняет offline imports внутри образа, но не подменяет GPU doctor, генерацию
-моделей или независимую оценку качества. Точные SHA официальных Actions получены
-из GitHub API и сохранены в deployment/actions-lock.json.
-
-СЛЕПОЕ ВИЗУАЛЬНОЕ ЧТЕНИЕ И МЧД В RC3
-
-Compose включает HARNESS_VISUAL_VERIFIER=1. После ограниченных перечитываний Qwen
-читает до двух исходных ROI без предлагаемого значения; сервер сравнивает полное
-чтение дословно. Неполный охват, расхождение или abstain оставляют review.
-Детерминированный A0 и остальные A1/A3/A4 явно не включают vision: его проверяют
-отдельно. Перед запуском диагностики остановите API:
-
-  docker compose stop ocr
-  docker compose run --rm --no-deps --entrypoint python ocr \
-    /app/scripts/visual_acceptance.py --models /models \
-    --output /reports/visual-target-001 --seconds 600
-  docker compose up -d
-
-Это синтетическая функциональная проверка обоих Qwen, не оценка точности реальных
-документов. Полные условия и поля отчёта: docs/visual-verifier.md.
-МЧД003/EMCHD_1 обрабатывается native-адаптером без OCR/Qwen, только в описанной
-области обычной ненотариальной доверенности: docs/mchd_native.md.
-Подпись, отзыв и юридические полномочия остаются not_verified. Составные поля,
-банковские ключи и неизвестные версии описаны в docs/typed-field-contracts.md.
-
-СВОИ ДОКУМЕНТЫ БЕЗ ПОДГОТОВКИ GOLD
-
-Краткий основной путь передачи: docs/colleague-handoff.md.
-Перечень профилей, точные поля, форматы и лимиты: docs/supported-documents.md.
-Шаблон входов: docs/own-documents.example.json. Последовательный клиент
-scripts/run_documents.py использует уже работающий Compose API, сохраняет
-result.json/trace.json/status.json каждого документа и общий summary.json.
-Он не загружает вторую модель и не требует банковских/ведомственных интеграций.
-Готовность к такому запуску и точность OCR — разные показатели отчёта.
+Драйвер для закреплённой CUDA 13.2 Update 2:
+https://docs.nvidia.com/cuda/archive/13.2.2/cuda-toolkit-release-notes/index.html
+CUDA minor compatibility (отдельные условия):
+https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html

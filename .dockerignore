@@ -15,6 +15,10 @@
 !experiments/yolo26/*.py
 !experiments/yolo26/*.md
 !experiments/yolo26/*.json
+!experiments/gpu_delivery/
+!experiments/gpu_delivery/*.py
+!experiments/gpu_delivery/*.md
+!experiments/gpu_delivery/*.json
 **/__pycache__
 **/*.pyc
 **/*.egg-info

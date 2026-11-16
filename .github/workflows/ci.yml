@@ -29,8 +29,14 @@ jobs:
       - name: Verify dependencies and syntax
         run: |
           python -m pip check
-          python -m compileall -q src scripts
+          python -m compileall -q src scripts experiments/gpu_delivery
+          bash -n scripts/gpu_handoff.sh
           python -m harness_ocr.cli profiles
+          python scripts/gpu_handoff.py --help
+          python scripts/gpu_smoke.py --help
+          python scripts/init_shared_locks.py --help
+          python scripts/export_gpu_delivery.py --help
+          python -m experiments.gpu_delivery.run --help
       - name: Test software contracts (fixtures, local HTTP/MCP and worker lifecycle)
         run: python -m unittest discover -s tests -v
       - name: Check source handoff
@@ -64,5 +70,231 @@ jobs:
       - name: Offline experimental detector import (no weights or inference)
         if: matrix.include_yolo == '1'
         run: docker run --rm --network none --entrypoint python harness-ocr:ci -c "import ultralytics; from harness_ocr.inference.yolo_detector import YoloTextDetector; assert ultralytics.__version__ == '8.4.211'; print('Experimental YOLO runtime import passed; GPU inference remains separate')"
+      - name: Offline metadata entrypoints in both images (no Torch import or GPU)
+        run: |
+          docker run --rm -i --network none --read-only --entrypoint python harness-ocr:ci - <<'PY'
+          import runpy, sys
+          entries = [
+              ('path', '/app/scripts/gpu_handoff.py'),
+              ('path', '/app/scripts/gpu_smoke.py'),
+              ('path', '/app/scripts/init_shared_locks.py'),
+              ('path', '/app/scripts/export_gpu_delivery.py'),
+              ('module', 'experiments.gpu_delivery.run'),
+          ]
+          for kind, entry in entries:
+              sys.argv = [entry, '--help']
+              try:
+                  if kind == 'path':
+                      runpy.run_path(entry, run_name='__main__')
+                  else:
+                      runpy.run_module(entry, run_name='__main__')
+              except SystemExit as done:
+                  assert done.code in (None, 0), (entry, done.code)
+              else:
+                  raise AssertionError('Metadata --help did not terminate: ' + entry)
+              assert 'torch' not in sys.modules, 'Metadata CLI imported Torch: ' + entry
+          print('Metadata entrypoints passed without model or Torch imports')
+          PY
+      - name: Real Compose configuration and nonroot shared leases (no GPU or models)
+        env:
+          HARNESS_IMAGE: harness-ocr:ci
+          HARNESS_HANDOFF_IMAGE: harness-ocr:ci
+          HARNESS_RUN_UID: '10001'
+          HARNESS_RUN_GID: '10001'
+          HARNESS_API_TOKEN: ci-analysis-only-not-a-secret-00000000
+          HARNESS_REVIEW_TOKEN: ci-review-only-not-a-secret-111111111
+        run: |
+          set -euo pipefail
+          ci_root=$(mktemp -d "${RUNNER_TEMP}/harness-no-gpu-XXXXXX")
+          install -d -m 0755 "$ci_root/models" "$ci_root/reports" "$ci_root/input"
+          export HARNESS_MODELS_HOST="$ci_root/models"
+          export HARNESS_REPORTS_HOST="$ci_root/reports"
+          export HARNESS_INPUT_HOST="$ci_root/input"
+          export HARNESS_LOCK_VOLUME="harness-ocr-ci-locks-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+          project="harness-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${{ matrix.include_yolo }}"
+          docker compose version
+          docker compose --project-name "$project" -f compose.yaml config --format json > "$ci_root/service-config.json"
+          docker compose --project-name "$project" -f compose.gpu-handoff.yaml config --format json > "$ci_root/handoff-config.json"
+          python3 - "$ci_root" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          for filename, name in [('service-config.json', 'lease-init'), ('handoff-config.json', 'lock-init')]:
+              config = json.loads((root / filename).read_text())
+              init = config['services'][name]
+              assert init['user'] == '0:0'
+              assert init['network_mode'] == 'none' and init['read_only'] is True
+              assert init['cap_drop'] == ['ALL']
+              assert set(init['cap_add']) == {'CHOWN', 'FOWNER', 'DAC_OVERRIDE'}
+              assert init.get('privileged', False) is False
+              assert 'devices' not in init and not init.get('deploy', {}).get('resources', {}).get('reservations', {}).get('devices')
+              assert len(init['volumes']) == 1 and init['volumes'][0]['target'] == '/locks'
+              assert init['volumes'][0]['type'] == 'volume'
+          print('Both real Compose configurations keep the root initializer isolated')
+          PY
+          set +e
+          docker run --rm --network none --read-only --entrypoint python harness-ocr:ci \
+            -m harness_ocr.cli verify-models --models /models \
+            --only xiaomi detector cyrillic qwen-0.8b qwen-4b yolo26l-text > "$ci_root/missing-models.json"
+          verify_status=$?
+          set -e
+          if [ "$verify_status" -ne 1 ]; then
+            echo "Empty-model verification must exit 1; received $verify_status"
+            exit 1
+          fi
+          python3 - "$ci_root/missing-models.json" <<'PY'
+          import json, pathlib, sys
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert value['ok'] is False and value['errors']
+          assert any(error.startswith('qwen-4b/') for error in value['errors'])
+          assert any(error.startswith('yolo26l-text/') for error in value['errors'])
+          PY
+          # A fresh UUID volume is owned only by this ephemeral CI attempt.
+          # Do not run compose down -v or remove any operator/user volume.
+          if docker volume inspect "$HARNESS_LOCK_VOLUME" >/dev/null 2>&1; then
+            echo 'Refusing to reuse an existing CI lock volume'
+            exit 1
+          fi
+          docker volume create --label "io.harness.ci-run=${GITHUB_RUN_ID}" "$HARNESS_LOCK_VOLUME"
+          docker compose --project-name "$project" -f compose.gpu-handoff.yaml \
+            run --rm --no-deps lock-init > "$ci_root/lock-init.json"
+          python3 - "$ci_root/lock-init.json" <<'PY'
+          import json, pathlib, sys
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          expected = {'cpu-admission.lock', 'cpu-compute.lock', 'cuda-admission.lock', 'cuda-compute.lock', 'gpu-delivery.lock'}
+          assert value['status'] == 'pass' and value['production_initialized'] is True
+          assert value['directory_mode'] == 0o1777
+          assert {row['name'] for row in value['files']} == expected
+          assert all(row['mode'] == 0o666 and row['uid'] == 0 and row['gid'] == 0 for row in value['files'])
+          PY
+          for uid in 10001 65534; do
+            docker run --rm -i --network none --read-only --user "$uid:$uid" \
+              --cap-drop ALL --security-opt no-new-privileges:true \
+              --mount "type=volume,source=$HARNESS_LOCK_VOLUME,target=/locks" \
+              --entrypoint python harness-ocr:ci - <<'PY'
+          from contextlib import ExitStack
+          import json, os, pathlib, stat, sys
+          from harness_ocr.inference.locks import FileLease, LeaseBusy
+          folder = pathlib.Path('/locks')
+          names = ('cpu-admission.lock', 'cpu-compute.lock', 'cuda-admission.lock', 'cuda-compute.lock', 'gpu-delivery.lock')
+          assert os.getuid() != 0 and stat.S_IMODE(folder.stat().st_mode) == 0o1777
+          before = {}
+          for name in names:
+              meta = (folder / name).lstat()
+              assert stat.S_ISREG(meta.st_mode) and not stat.S_ISLNK(meta.st_mode)
+              assert stat.S_IMODE(meta.st_mode) == 0o666 and meta.st_uid == 0 and meta.st_gid == 0
+              before[name] = (meta.st_dev, meta.st_ino, (folder / name).read_bytes())
+          with ExitStack() as stack:
+              for name in names:
+                  stack.enter_context(FileLease(folder / name))
+              try:
+                  FileLease(folder / 'cuda-admission.lock').acquire()
+              except LeaseBusy:
+                  pass
+              else:
+                  raise AssertionError('A live lease was not exclusive')
+          for name in names:
+              meta = (folder / name).stat()
+              assert (meta.st_dev, meta.st_ino, (folder / name).read_bytes()) == before[name]
+          assert 'torch' not in sys.modules
+          print(json.dumps({'shared_leases_acquired': 5, 'uid': os.getuid(), 'inodes_preserved': True, 'gpu_requested': False, 'models_run': False}))
+          PY
+          done
+          # Exercise the actual host-generated nested read-only mount overlays.
+          export HARNESS_RUN_UID="$(id -u)" HARNESS_RUN_GID="$(id -g)"
+          python3 - "$ci_root" <<'PY'
+          import base64, importlib.util, json, pathlib, sys
+          from types import SimpleNamespace
+          root = pathlib.Path(sys.argv[1])
+          spec = importlib.util.spec_from_file_location('ci_host_handoff', 'scripts/gpu_handoff.py')
+          host = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(host)
+          source = root / 'source.png'
+          source.write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC'))
+          manifest = root / 'own-manifest.json'
+          manifest.write_text(json.dumps({'schema_version':'harness-own-documents/1','documents':[
+              {'id':'ci-document','path':'source.png','profile_id':'D07','subset':['payer.name']}]}))
+          gold = root / 'gold.json'
+          gold.write_text(json.dumps({'schema_version':'harness-gpu-delivery-gold/1',
+              'documents':{'ci-document':{'payer.name':'CI_REFERENCE_ONLY'}}}))
+          checked = host.documents_from_args(SimpleNamespace(manifest=manifest, profile=None, subset=None, gold=gold))
+          state = root / 'state'
+          state.mkdir(mode=0o700)
+          mounts = host.prepare_inputs(checked, state / 'input')
+          host.write_json(state / 'inputs.compose.json', {'services':{
+              'handoff':{'volumes':mounts}, 'measured':{'volumes':mounts}}})
+          references = host.gold_from_args(gold, checked)
+          assert host.prepare_references(references, state) == state / 'references.compose.json'
+          assert (state / 'input/documents/0000.png').is_file()
+          assert (state / 'references/gold.json').is_file()
+          PY
+          export HARNESS_INPUT_HOST="$ci_root/state/input"
+          docker compose --project-name "$project" -f compose.gpu-handoff.yaml \
+            -f "$ci_root/state/inputs.compose.json" config --format json > "$ci_root/input-config.json"
+          docker compose --project-name "$project" -f compose.gpu-handoff.yaml \
+            -f "$ci_root/state/inputs.compose.json" -f "$ci_root/state/references.compose.json" \
+            config --format json > "$ci_root/gold-config.json"
+          python3 - "$ci_root" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          plain = json.loads((root / 'input-config.json').read_text())
+          gold = json.loads((root / 'gold-config.json').read_text())
+          for config in (plain, gold):
+              measured = config['services']['measured']
+              assert measured['pid'] == 'host'
+              devices = measured['deploy']['resources']['reservations']['devices']
+              assert devices and devices[0]['driver'] == 'nvidia' and 'gpu' in devices[0]['capabilities']
+              for service in ('handoff', 'measured'):
+                  mounts = {v['target']:v for v in config['services'][service]['volumes']}
+                  assert mounts['/input']['source'] == str(root / 'state/input') and mounts['/input']['read_only'] is True
+                  individual = mounts['/input/documents/0000.png']
+                  assert individual['source'] == str(root / 'source.png') and individual['read_only'] is True
+                  assert individual['bind']['create_host_path'] is False
+          for service, definition in plain['services'].items():
+              assert not any(v['target'].startswith('/references') for v in definition.get('volumes', []))
+          for service, definition in gold['services'].items():
+              references = {v['target']:v for v in definition.get('volumes', []) if v['target'].startswith('/references')}
+              if service in ('handoff', 'measured'):
+                  assert set(references) == {'/references', '/references/gold.json'}
+                  assert references['/references']['source'] == str(root / 'state/references')
+                  assert references['/references/gold.json']['source'] == str(root / 'gold.json')
+                  assert all(v['read_only'] is True and v['bind']['create_host_path'] is False for v in references.values())
+              else:
+                  assert not references
+          assert 'CI_REFERENCE_ONLY' not in json.dumps(gold)
+          print('Runtime inputs/references overlays preserve GPU/PID inheritance and exact read-only scopes')
+          PY
+          # Direct docker run deliberately omits --gpus: only metadata planning.
+          docker run --rm -i --network none --read-only --user "$HARNESS_RUN_UID:$HARNESS_RUN_GID" \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --mount "type=bind,source=$ci_root/state/input,target=/input,readonly" \
+            --mount "type=bind,source=$ci_root/source.png,target=/input/documents/0000.png,readonly" \
+            --mount "type=bind,source=$ci_root/state/references,target=/references,readonly" \
+            --mount "type=bind,source=$ci_root/gold.json,target=/references/gold.json,readonly" \
+            --mount "type=bind,source=$ci_root/models,target=/models,readonly" \
+            --mount "type=bind,source=$ci_root/reports,target=/reports" \
+            --entrypoint python harness-ocr:ci - <<'PY'
+          import json, pathlib, runpy, sys
+          from PIL import Image
+          with Image.open('/input/documents/0000.png') as image:
+              assert image.format == 'PNG' and image.size == (1, 1)
+              image.verify()
+          sys.argv = ['experiments.gpu_delivery.run', '--manifest', '/input/own-documents.json',
+                      '--gold', '/references/gold.json', '--models', '/models', '--lock-dir', '/locks',
+                      '--output', '/reports/metadata-plan']
+          try:
+              runpy.run_module('experiments.gpu_delivery.run', run_name='__main__')
+          except SystemExit as done:
+              assert done.code in (None, 0), done.code
+          else:
+              raise AssertionError('Metadata planner did not terminate')
+          plan = json.loads(pathlib.Path('/reports/metadata-plan/plan.json').read_text())
+          assert plan['preflight_neural_calls'] == 0 and plan['model_verification_performed'] is False
+          assert plan['gold_metadata']['schema_validated_parent_only_before_inference'] is True
+          assert plan['gold_metadata']['reference_values_sent_to_worker'] is False
+          assert len(plan['documents']) == 1 and plan['documents'][0]['subset'] == ['payer.name']
+          assert all(arm['reading_policy'] == 'adaptive' and arm['visual_verifier'] is True for arm in plan['arm_settings'].values())
+          assert 'torch' not in sys.modules and not list(pathlib.Path('/models').iterdir())
+          print('Real built-image metadata planning with read-only source/gold passed without GPU, Torch, weights or model calls')
+          PY
       - name: Record actual built image
         run: docker image inspect harness-ocr:ci --format '{{.Id}}'

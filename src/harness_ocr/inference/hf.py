@@ -51,6 +51,8 @@ class HFReaders:
     def generate(self,name,inputs,max_new_tokens,prefix_constraint=None):
         model=self.models[name]; torch=self.torch; start=time.perf_counter()
         inputs={k:v.to(self.settings.device) if hasattr(v,'to') else v for k,v in inputs.items()}
+        input_devices={k:str(v.device) for k,v in inputs.items() if hasattr(v,'device')}
+        input_dtypes={k:str(v.dtype) for k,v in inputs.items() if hasattr(v,'dtype')}
         n=int(inputs['input_ids'].shape[-1])
         if n>self.settings.max_input_tokens: raise ValueError('templated_input_token_limit')
         if self.settings.device=='cuda': torch.cuda.reset_peak_memory_stats()
@@ -79,6 +81,9 @@ class HFReaders:
                 'input_ids_sha256':digest(inputs['input_ids'].detach().cpu().tolist()),
                 'model_id':name,'device':self.settings.device,'dtype':self.settings.dtype,
                 'peak_cuda_allocated_bytes':torch.cuda.max_memory_allocated() if self.settings.device=='cuda' else None,
+                'peak_cuda_reserved_bytes':torch.cuda.max_memory_reserved() if self.settings.device=='cuda' else None,
+                'input_tensor_devices':input_devices,'input_tensor_dtypes':input_dtypes,
+                'effective_parameter_devices':sorted({str(p.device) for p in model.parameters()}),
                 'effective_parameter_dtypes':sorted({str(p.dtype) for p in model.parameters()}),
                 'fresh_generation_state':True,'thinking_enabled':False,
                 'json_constraint_applied':prefix_constraint is not None,

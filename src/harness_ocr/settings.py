@@ -63,6 +63,10 @@ class Settings:
                    rescue_text_detector=os.getenv('HARNESS_RESCUE_TEXT_DETECTOR','none'),
                    max_detector_rescues=int(os.getenv('HARNESS_MAX_DETECTOR_RESCUES','1')),
                    max_whole_page_reads=int(os.getenv('HARNESS_MAX_WHOLE_PAGE_READS','1')),
+                   max_input_tokens=int(os.getenv('HARNESS_MAX_INPUT_TOKENS','8192')),
+                   max_new_tokens=int(os.getenv('HARNESS_MAX_NEW_TOKENS','1024')),
+                   call_timeout_seconds=float(os.getenv('HARNESS_CALL_TIMEOUT_SECONDS','120')),
+                   document_timeout_seconds=float(os.getenv('HARNESS_DOCUMENT_TIMEOUT_SECONDS','600')),
                    cpu_threads=int(os.getenv('HARNESS_CPU_THREADS','4')),
                    visual_verifier=os.getenv('HARNESS_VISUAL_VERIFIER','0')=='1',
                    runtime_lock_dir=Path(os.environ['HARNESS_LOCK_DIR']).resolve() if os.getenv('HARNESS_LOCK_DIR') else None)

@@ -3,7 +3,7 @@
 ARG PYTHON_IMAGE=python:3.12.16-slim-bookworm@sha256:0f086103b026048cc50cb5da25ec435c023c5241a83fc44daea593377abc61c4
 FROM ${PYTHON_IMAGE}
 LABEL org.opencontainers.image.title="Harness OCR" \
-      org.opencontainers.image.version="0.1.0rc5" \
+      org.opencontainers.image.version="0.1.0rc6" \
       org.opencontainers.image.description="GPU release candidate; target acceptance required"
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
@@ -13,7 +13,9 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 ARG HARNESS_INSTALL_YOLO=0
 ENV YOLO_AUTOINSTALL=false YOLO_VERBOSE=false YOLO_OFFLINE=true \
-    YOLO_CONFIG_DIR=/tmp/harness-ultralytics MPLCONFIGDIR=/tmp/harness-matplotlib
+    YOLO_CONFIG_DIR=/tmp/harness-ultralytics MPLCONFIGDIR=/tmp/harness-matplotlib \
+    XDG_CACHE_HOME=/tmp/harness-cache TORCH_HOME=/tmp/harness-torch \
+    TRITON_CACHE_DIR=/tmp/harness-triton TORCHINDUCTOR_CACHE_DIR=/tmp/harness-inductor
 RUN apt-get update && apt-get install --no-install-recommends -y \
       ca-certificates libglib2.0-0 libgomp1 fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
@@ -28,6 +30,7 @@ COPY LICENSES/ /app/LICENSES/
 COPY src/ /app/src/
 COPY scripts/ /app/scripts/
 COPY experiments/yolo26/ /app/experiments/yolo26/
+COPY experiments/gpu_delivery/ /app/experiments/gpu_delivery/
 RUN if [ "$HARNESS_INSTALL_YOLO" = "1" ]; then \
       python -m pip install --no-cache-dir '.[inference,mcp,yolo]'; \
     elif [ "$HARNESS_INSTALL_YOLO" = "0" ]; then \
