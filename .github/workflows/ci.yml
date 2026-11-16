@@ -228,6 +228,15 @@ jobs:
               'handoff':{'volumes':mounts}, 'measured':{'volumes':mounts}}})
           references = host.gold_from_args(gold, checked)
           assert host.prepare_references(references, state) == state / 'references.compose.json'
+          # Raw overlays must explicitly prohibit host-path creation. Rendered
+          # Compose JSON may omit a false default; check these contracts apart.
+          for overlay in ('inputs.compose.json', 'references.compose.json'):
+              raw = json.loads((state / overlay).read_text())
+              for service in ('handoff', 'measured'):
+                  assert raw['services'][service]['volumes']
+                  for mount in raw['services'][service]['volumes']:
+                      assert mount['read_only'] is True
+                      assert mount.get('bind', {}).get('create_host_path') is False
           assert (state / 'input/documents/0000.png').is_file()
           assert (state / 'references/gold.json').is_file()
           PY
@@ -252,7 +261,7 @@ jobs:
                   assert mounts['/input']['source'] == str(root / 'state/input') and mounts['/input']['read_only'] is True
                   individual = mounts['/input/documents/0000.png']
                   assert individual['source'] == str(root / 'source.png') and individual['read_only'] is True
-                  assert individual['bind']['create_host_path'] is False
+                  assert individual.get('bind', {}).get('create_host_path', False) is False
           for service, definition in plain['services'].items():
               assert not any(v['target'].startswith('/references') for v in definition.get('volumes', []))
           for service, definition in gold['services'].items():
@@ -261,7 +270,7 @@ jobs:
                   assert set(references) == {'/references', '/references/gold.json'}
                   assert references['/references']['source'] == str(root / 'state/references')
                   assert references['/references/gold.json']['source'] == str(root / 'gold.json')
-                  assert all(v['read_only'] is True and v['bind']['create_host_path'] is False for v in references.values())
+                  assert all(v['read_only'] is True and v.get('bind', {}).get('create_host_path', False) is False for v in references.values())
               else:
                   assert not references
           assert 'CI_REFERENCE_ONLY' not in json.dumps(gold)
